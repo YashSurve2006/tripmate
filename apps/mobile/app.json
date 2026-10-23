@@ -4,7 +4,7 @@
     "slug": "tripmate",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/tripmate-app-icon.png",
     "scheme": "tripmate",
     "userInterfaceStyle": "light",
     "primaryColor": "#7C3AED",
@@ -15,10 +15,9 @@
     "android": {
       "package": "com.tripmate.app",
       "adaptiveIcon": {
-        "backgroundColor": "#7C3AED",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#160B37",
+        "foregroundImage": "./assets/images/tripmate-app-icon-foreground.png",
+        "backgroundImage": "./assets/images/tripmate-app-icon-background.png"
       },
       "predictiveBackGestureEnabled": true
     },
