@@ -5,9 +5,11 @@ import {
   formatCurrency,
   parseCurrencyToMinorUnits,
   simplifyDebts,
+  validateCustomSplit,
   validateExactSplit,
   validateExpensePayments,
 } from './finance';
+
 import { ExpenseRecord, SettlementRecord } from './types';
 
 describe('Financial Engine & Minor Unit Arithmetic', () => {
@@ -196,4 +198,132 @@ describe('Financial Engine & Minor Unit Arithmetic', () => {
       expect(validateExpensePayments(5000, [{ userId: 'u1', amount: 4000 }]).isValid).toBe(false);
     });
   });
+
+  describe('validateCustomSplit (Custom Amount-Wise Splitting)', () => {
+    it('accurately validates a balanced allocation (e.g., ₹1,000 total with ₹500, ₹300, ₹200)', () => {
+      const totalPaise = 100000; // ₹1,000.00
+      const shares = [
+        { userId: 'yash', amountPaise: 50000 }, // ₹500.00
+        { userId: 'member_a', amountPaise: 30000 }, // ₹300.00
+        { userId: 'member_b', amountPaise: 20000 }, // ₹200.00
+      ];
+
+      const res = validateCustomSplit(totalPaise, shares);
+      expect(res.isValid).toBe(true);
+      expect(res.status).toBe('BALANCED');
+      expect(res.allocatedPaise).toBe(100000);
+      expect(res.remainingPaise).toBe(0);
+      expect(res.error).toBeUndefined();
+    });
+
+    it('detects under-allocation and calculates remaining amount correctly', () => {
+      const totalPaise = 100000; // ₹1,000.00
+      const shares = [
+        { userId: 'yash', amountPaise: 50000 },
+        { userId: 'member_a', amountPaise: 30000 },
+      ]; // Allocated: ₹800.00, Remaining: ₹200.00
+
+      const res = validateCustomSplit(totalPaise, shares);
+      expect(res.isValid).toBe(false);
+      expect(res.status).toBe('UNDER_ALLOCATED');
+      expect(res.allocatedPaise).toBe(80000);
+      expect(res.remainingPaise).toBe(20000);
+      expect(res.error).toContain('₹200.00 under-allocated');
+    });
+
+    it('detects over-allocation when sum of custom shares exceeds total', () => {
+      const totalPaise = 100000; // ₹1,000.00
+      const shares = [
+        { userId: 'yash', amountPaise: 60000 },
+        { userId: 'member_a', amountPaise: 50000 },
+      ]; // Allocated: ₹1,100.00, Remaining: -₹100.00
+
+      const res = validateCustomSplit(totalPaise, shares);
+      expect(res.isValid).toBe(false);
+      expect(res.status).toBe('OVER_ALLOCATED');
+      expect(res.allocatedPaise).toBe(110000);
+      expect(res.remainingPaise).toBe(-10000);
+      expect(res.error).toContain('exceeds total by ₹100.00');
+    });
+
+    it('permits a member to pay nothing by assigning ₹0 share', () => {
+      const totalPaise = 100000;
+      const shares = [
+        { userId: 'yash', amountPaise: 70000 },
+        { userId: 'member_a', amountPaise: 30000 },
+        { userId: 'member_b', amountPaise: 0 }, // ₹0 share
+      ];
+
+      const res = validateCustomSplit(totalPaise, shares);
+      expect(res.isValid).toBe(true);
+      expect(res.status).toBe('BALANCED');
+      expect(res.allocatedPaise).toBe(100000);
+      expect(res.remainingPaise).toBe(0);
+    });
+
+    it('handles decimal paise values accurately (e.g. ₹123.45)', () => {
+      const totalPaise = 12345; // ₹123.45
+      const shares = [
+        { userId: 'yash', amountPaise: 5025 }, // ₹50.25
+        { userId: 'member_a', amountPaise: 7320 }, // ₹73.20
+      ];
+
+      const res = validateCustomSplit(totalPaise, shares);
+      expect(res.isValid).toBe(true);
+      expect(res.status).toBe('BALANCED');
+      expect(res.allocatedPaise).toBe(12345);
+      expect(res.remainingPaise).toBe(0);
+    });
+
+    it('rejects negative share amounts safely', () => {
+      const totalPaise = 5000;
+      const shares = [
+        { userId: 'yash', amountPaise: 6000 },
+        { userId: 'member_a', amountPaise: -1000 },
+      ];
+
+      const res = validateCustomSplit(totalPaise, shares);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toContain('cannot be negative');
+    });
+
+    it('verifies that group balances respect custom shares with zero-sum invariant', () => {
+      const members = ['yash', 'member_a', 'member_b'];
+      // Yash pays ₹1,000 (100000 paise). Custom split: Yash owes 500, Member A owes 300, Member B owes 200.
+      const expenses: ExpenseRecord[] = [
+        {
+          id: 'exp-custom',
+          groupId: 'grp-test',
+          title: 'Custom Dinner',
+          amount: 100000,
+          currency: 'INR',
+          category: 'FOOD_AND_DRINK',
+          date: '2026-10-23',
+          createdById: 'yash',
+          payments: [{ userId: 'yash', amount: 100000 }],
+          splits: [
+            { userId: 'yash', amount: 50000, splitType: 'EXACT' },
+            { userId: 'member_a', amount: 30000, splitType: 'EXACT' },
+            { userId: 'member_b', amount: 20000, splitType: 'EXACT' },
+          ],
+        },
+      ];
+
+      const summary = calculateGroupBalances(members, expenses, []);
+      // Yash paid 1000, share is 500 -> net balance +500 (is owed ₹500)
+      expect(summary.memberBalances['yash'].balance).toBe(50000);
+      // Member A paid 0, share is 300 -> net balance -300 (owes ₹300)
+      expect(summary.memberBalances['member_a'].balance).toBe(-30000);
+      // Member B paid 0, share is 200 -> net balance -200 (owes ₹200)
+      expect(summary.memberBalances['member_b'].balance).toBe(-20000);
+      // Sum must equal 0 exactly
+      expect(summary.isBalancedZeroSum).toBe(true);
+
+      const transfers = summary.suggestedSettlements;
+      expect(transfers).toHaveLength(2);
+      expect(transfers.some(t => t.fromUserId === 'member_a' && t.toUserId === 'yash' && t.amount === 30000)).toBe(true);
+      expect(transfers.some(t => t.fromUserId === 'member_b' && t.toUserId === 'yash' && t.amount === 20000)).toBe(true);
+    });
+  });
 });
+

@@ -2,12 +2,14 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Clipboard,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -19,10 +21,12 @@ import { DocumentViewerModal } from '../../src/components/common/DocumentViewerM
 import { EditMemberModal } from '../../src/components/common/EditMemberModal';
 import { ExpenseItem, ExpenseItemData } from '../../src/components/common/ExpenseItem';
 import { ExportExcelModal } from '../../src/components/common/ExportExcelModal';
+import { WhatsAppReminderModal } from '../../src/components/common/WhatsAppReminderModal';
 import { Avatar } from '../../src/components/ui/Avatar';
 import { Badge } from '../../src/components/ui/Badge';
 import { Button } from '../../src/components/ui/Button';
 import { ConfirmationDialog } from '../../src/components/ui/ConfirmationDialog';
+
 import { EmptyState } from '../../src/components/ui/EmptyState';
 import { Loading } from '../../src/components/ui/Loading';
 import { useAuth } from '../../src/context/AuthContext';
@@ -31,8 +35,10 @@ import { ActivityRow, GroupDocumentRow } from '../../src/services/database';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { Radius, Shadows, Spacing, Typography } from '../../src/theme/tokens';
 import { formatCurrency, simplifyDebts } from '../../src/utils/finance';
+import { buildSettlementReminderMessage } from '../../src/utils/whatsapp';
 
 type TabOption = 'OVERVIEW' | 'EXPENSES' | 'BALANCES' | 'DOCUMENTS' | 'MEMBERS' | 'ACTIVITY';
+
 
 export default function GroupDetailsScreen() {
   const router = useRouter();
@@ -66,6 +72,22 @@ export default function GroupDetailsScreen() {
 
   // Advanced Excel Export UI state
   const [exportModalVisible, setExportModalVisible] = useState(false);
+
+  // Group Management & Danger Zone UI state
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [clearBillsConfirmVisible, setClearBillsConfirmVisible] = useState(false);
+  const [groupMenuVisible, setGroupMenuVisible] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // WhatsApp Reminder UI state
+  const [whatsappModalVisible, setWhatsappModalVisible] = useState(false);
+  const [whatsappTarget, setWhatsappTarget] = useState<{
+    recipientName: string;
+    memberUserId?: string;
+    phoneNumber?: string;
+    message: string;
+  } | null>(null);
+
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -189,6 +211,42 @@ export default function GroupDetailsScreen() {
     Alert.alert(result.archived ? 'Member Archived' : 'Member Removed', result.message);
   };
 
+  const handleDeleteGroup = async () => {
+    if (!group) return;
+    setActionLoading(true);
+    try {
+      await api.deleteGroup(group.id);
+      setDeleteConfirmVisible(false);
+      setGroupMenuVisible(false);
+      Alert.alert('Group Deleted', `"${group.name}" and all its records have been permanently removed.`);
+      router.replace('/(tabs)/groups' as any);
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to delete group.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleClearBills = async () => {
+    if (!group) return;
+    setActionLoading(true);
+    try {
+      await api.clearGroupExpenses(group.id);
+      setClearBillsConfirmVisible(false);
+      setGroupMenuVisible(false);
+      await loadData();
+      Alert.alert(
+        'Bills & Expenses Cleared',
+        `All financial records and receipts have been cleared for "${group.name}". Balances have been reset to ₹0.00.`
+      );
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to clear bills.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+
   if (loading && !refreshing) {
     return <Loading fullScreen message="Loading group details..." />;
   }
@@ -240,11 +298,19 @@ export default function GroupDetailsScreen() {
           >
             <MaterialCommunityIcons name="file-excel" size={22} color="#107C41" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={copyInviteCode} style={styles.headerBtn}>
+          <TouchableOpacity onPress={copyInviteCode} style={[styles.headerBtn, { marginRight: 4 }]} accessibilityLabel="Share Invite Code">
             <Feather name="share-2" size={20} color={colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setGroupMenuVisible(true)}
+            style={styles.headerBtn}
+            accessibilityLabel="Group Options"
+          >
+            <Feather name="more-vertical" size={22} color={colors.text} />
           </TouchableOpacity>
         </View>
       </View>
+
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -521,8 +587,80 @@ export default function GroupDetailsScreen() {
                 </View>
               ))}
             </View>
+
+            {/* Group Settings & Financial Actions (Danger Zone) */}
+            <View style={[styles.sectionHeaderRow, { marginTop: Spacing.xl }]}>
+              <Text style={[styles.sectionTitle, { color: colors.text }]}>Group Management</Text>
+            </View>
+
+            <View
+              style={[
+                styles.managementCard,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: isDark ? 'rgba(239, 68, 68, 0.3)' : '#FCA5A5',
+                },
+              ]}
+            >
+              {/* Action 1: Clear Bills & Expenses */}
+              <View style={styles.managementActionRow}>
+                <View
+                  style={[
+                    styles.managementIconCircle,
+                    { backgroundColor: isDark ? 'rgba(217, 119, 6, 0.15)' : '#FEF3C7' },
+                  ]}
+                >
+                  <Feather name="refresh-cw" size={18} color="#D97706" />
+                </View>
+                <View style={styles.managementInfo}>
+                  <Text style={[styles.managementTitle, { color: colors.text }]}>
+                    Clear Bills & Expenses
+                  </Text>
+                  <Text style={[styles.managementDesc, { color: colors.textMuted }]}>
+                    Clear all expenses, bills, and settlements, resetting balances to ₹0.00. Preserves the group, members, and settings.
+                  </Text>
+                </View>
+                <Button
+                  title="Clear Bills"
+                  variant="outline"
+                  size="sm"
+                  onPress={() => setClearBillsConfirmVisible(true)}
+                  style={{ alignSelf: 'center' }}
+                />
+              </View>
+
+              <View style={[styles.managementDivider, { backgroundColor: colors.borderLight }]} />
+
+              {/* Action 2: Delete Group */}
+              <View style={styles.managementActionRow}>
+                <View
+                  style={[
+                    styles.managementIconCircle,
+                    { backgroundColor: isDark ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2' },
+                  ]}
+                >
+                  <Feather name="trash-2" size={18} color={colors.negative} />
+                </View>
+                <View style={styles.managementInfo}>
+                  <Text style={[styles.managementTitle, { color: colors.negative }]}>
+                    Delete Group
+                  </Text>
+                  <Text style={[styles.managementDesc, { color: colors.textMuted }]}>
+                    Permanently delete this group and all its expenses, split allocations, settlements, receipts, and group members.
+                  </Text>
+                </View>
+                <Button
+                  title="Delete Group"
+                  variant="danger"
+                  size="sm"
+                  onPress={() => setDeleteConfirmVisible(true)}
+                  style={{ alignSelf: 'center' }}
+                />
+              </View>
+            </View>
           </View>
         )}
+
 
         {/* --- TAB 2: EXPENSES --- */}
         {activeTab === 'EXPENSES' && (
@@ -712,22 +850,50 @@ export default function GroupDetailsScreen() {
                           {formatCurrency(t.amount, group.currency)}
                         </Text>
                       </View>
-                      <Button
-                        title="Settle"
-                        size="sm"
-                        variant={isDebtor ? 'primary' : 'outline'}
-                        onPress={() => {
-                          setSelectedTransfer({
-                            fromId: t.fromUserId,
-                            fromName: fromMember?.name || 'Member',
-                            toId: t.toUserId,
-                            toName: toMember?.name || 'Member',
-                            amountPaise: t.amount,
-                          });
-                          setSettleModalVisible(true);
-                        }}
-                      />
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs }}>
+                        <TouchableOpacity
+                          activeOpacity={0.8}
+                          onPress={() => {
+                            const msg = buildSettlementReminderMessage({
+                              recipientName: fromMember?.name,
+                              groupName: group.name,
+                              debtorName,
+                              creditorName,
+                              amountPaise: t.amount,
+                              currency: group.currency,
+                            });
+                            setWhatsappTarget({
+                              recipientName: fromMember?.name || 'Member',
+                              memberUserId: fromMember?.userId,
+                              phoneNumber: fromMember?.phone || '',
+                              message: msg,
+                            });
+                            setWhatsappModalVisible(true);
+                          }}
+                          style={styles.transferWhatsAppBtn}
+                          accessibilityLabel="WhatsApp Reminder"
+                        >
+                          <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
+                        </TouchableOpacity>
+
+                        <Button
+                          title="Settle"
+                          size="sm"
+                          variant={isDebtor ? 'primary' : 'outline'}
+                          onPress={() => {
+                            setSelectedTransfer({
+                              fromId: t.fromUserId,
+                              fromName: fromMember?.name || 'Member',
+                              toId: t.toUserId,
+                              toName: toMember?.name || 'Member',
+                              amountPaise: t.amount,
+                            });
+                            setSettleModalVisible(true);
+                          }}
+                        />
+                      </View>
                     </View>
+
                   );
                 })}
               </View>
@@ -1038,9 +1204,136 @@ export default function GroupDetailsScreen() {
         members={displayMembers.map((m: any) => ({ userId: m.userId || m.id, name: m.name }))}
         onClose={() => setExportModalVisible(false)}
       />
+
+      {/* Delete Group Confirmation Dialog */}
+      <ConfirmationDialog
+        visible={deleteConfirmVisible}
+        title="Delete Group Permanently?"
+        message={`Are you sure you want to delete "${group.name}"?\n\nThis will permanently remove all expenses, bills, split allocations, settlements, receipt documents, and membership records for this group.\n\nThis action cannot be undone.`}
+        confirmText="Delete Group"
+        isDestructive
+        loading={actionLoading}
+        onConfirm={handleDeleteGroup}
+        onCancel={() => setDeleteConfirmVisible(false)}
+      />
+
+      {/* Clear Bills & Expenses Confirmation Dialog */}
+      <ConfirmationDialog
+        visible={clearBillsConfirmVisible}
+        title="Clear All Bills & Expenses?"
+        message={`Are you sure you want to clear all bills and expenses for "${group.name}"?\n\nThis will remove all expense records, split allocations, settlements, and receipt attachments, resetting balances to ₹0.00.\n\nThe group, its members, and settings will remain completely intact.`}
+        confirmText="Clear All Bills"
+        isDestructive
+        loading={actionLoading}
+        onConfirm={handleClearBills}
+        onCancel={() => setClearBillsConfirmVisible(false)}
+      />
+
+      {/* Group Options Sheet / Modal */}
+      <Modal
+        visible={groupMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGroupMenuVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setGroupMenuVisible(false)}>
+          <View style={styles.menuBackdrop}>
+            <TouchableWithoutFeedback>
+              <View
+                style={[
+                  styles.menuSheet,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.borderLight,
+                  },
+                ]}
+              >
+                <View style={[styles.menuHeader, { borderBottomColor: colors.borderLight }]}>
+                  <Text style={[styles.menuTitle, { color: colors.text }]}>Group Actions</Text>
+                  <TouchableOpacity onPress={() => setGroupMenuVisible(false)}>
+                    <Feather name="x" size={20} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    setGroupMenuVisible(false);
+                    setExportModalVisible(true);
+                  }}
+                >
+                  <MaterialCommunityIcons name="file-excel" size={20} color="#107C41" style={{ marginRight: 12 }} />
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>Export 10-Sheet Excel (.xlsx)</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    setGroupMenuVisible(false);
+                    copyInviteCode();
+                  }}
+                >
+                  <Feather name="share-2" size={18} color={colors.primary} style={{ marginRight: 12 }} />
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>Share Group Invite Code</Text>
+                </TouchableOpacity>
+
+                <View style={[styles.menuDivider, { backgroundColor: colors.borderLight }]} />
+
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    setGroupMenuVisible(false);
+                    setClearBillsConfirmVisible(true);
+                  }}
+                >
+                  <Feather name="refresh-cw" size={18} color="#D97706" style={{ marginRight: 12 }} />
+                  <Text style={[styles.menuItemText, { color: '#D97706', fontWeight: '600' }]}>
+                    Clear Bills & Expenses
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    setGroupMenuVisible(false);
+                    setDeleteConfirmVisible(true);
+                  }}
+                >
+                  <Feather name="trash-2" size={18} color={colors.negative} style={{ marginRight: 12 }} />
+                  <Text style={[styles.menuItemText, { color: colors.negative, fontWeight: '700' }]}>
+                    Delete Group Permanently
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* WhatsApp Settlement Reminder Modal */}
+      {whatsappTarget && (
+        <WhatsAppReminderModal
+          visible={whatsappModalVisible}
+          title="WhatsApp Settlement Reminder"
+          recipientName={whatsappTarget.recipientName}
+          initialPhoneNumber={whatsappTarget.phoneNumber}
+          defaultMessage={whatsappTarget.message}
+          onClose={() => {
+            setWhatsappModalVisible(false);
+            setWhatsappTarget(null);
+          }}
+          onSavePhoneNumber={async (newPhone) => {
+            if (whatsappTarget.memberUserId) {
+              await api.updateGroupMember(group.id, whatsappTarget.memberUserId, { phone: newPhone });
+              await loadData();
+            }
+          }}
+        />
+      )}
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
@@ -1500,4 +1793,93 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 6,
   },
+  transferWhatsAppBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  managementCard: {
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    padding: Spacing.md,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xl,
+    ...Shadows.sm,
+  },
+  managementActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.xs,
+  },
+  managementIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  managementInfo: {
+    flex: 1,
+    marginRight: Spacing.sm,
+  },
+  managementTitle: {
+    ...Typography.body,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  managementDesc: {
+    ...Typography.caption,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  managementDivider: {
+    height: 1,
+    marginVertical: Spacing.sm,
+  },
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.lg,
+  },
+  menuSheet: {
+    width: '100%',
+    maxWidth: 360,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    padding: Spacing.lg,
+    ...Shadows.lg,
+  },
+  menuHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: Spacing.sm,
+    marginBottom: Spacing.sm,
+    borderBottomWidth: 1,
+  },
+  menuTitle: {
+    ...Typography.h3,
+    fontSize: 16,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm + 2,
+  },
+  menuItemText: {
+    fontSize: 14,
+  },
+  menuDivider: {
+    height: 1,
+    marginVertical: Spacing.xs,
+  },
 });
+

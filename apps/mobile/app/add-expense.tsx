@@ -12,21 +12,28 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Avatar } from '../src/components/ui/Avatar';
+import { Badge } from '../src/components/ui/Badge';
 import { Button } from '../src/components/ui/Button';
 import { Input } from '../src/components/ui/Input';
 import { useAuth } from '../src/context/AuthContext';
 import { api, GroupDocumentRow } from '../src/services/api';
 import { useTheme } from '../src/theme/ThemeContext';
-import { Radius, Spacing, Typography } from '../src/theme/tokens';
+import { Radius, Shadows, Spacing, Typography } from '../src/theme/tokens';
 import {
   capturePhotoFromCamera,
   pickDocumentFile,
   pickImageFromGallery,
   PickedFile,
 } from '../src/utils/documentPicker';
-import { calculateEqualSplit, formatCurrency, parseAmountToPaise } from '../src/utils/finance';
+import {
+  calculateEqualSplit,
+  formatCurrency,
+  parseAmountToPaise,
+  validateCustomSplit,
+} from '../src/utils/finance';
+
 
 const CATEGORIES = [
   { key: 'FOOD_AND_DRINK', label: 'Food', icon: 'silverware-fork-knife', color: '#EA580C' },
@@ -79,6 +86,11 @@ export default function AddExpenseScreen() {
   const [participantIds, setParticipantIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Split Method: EQUAL or CUSTOM
+  const [splitMethod, setSplitMethod] = useState<'EQUAL' | 'CUSTOM'>('EQUAL');
+  const [customShares, setCustomShares] = useState<Record<string, string>>({});
+
 
   // Group documents state & attached receipt
   const [groupDocs, setGroupDocs] = useState<GroupDocumentRow[]>([]);
@@ -186,7 +198,66 @@ export default function AddExpenseScreen() {
 
   // Live minor units calculation & equal split preview
   const amountPaise = parseAmountToPaise(amountStr);
-  const splits = calculateEqualSplit(amountPaise, participantIds);
+  const equalSplits = calculateEqualSplit(amountPaise, participantIds);
+
+  // Custom split shares calculation & validation
+  const customSplitShares: { userId: string; amountPaise: number }[] = groupMembers.map((m: any) => {
+    const mId = m.userId || m.id;
+    const inputVal = customShares[mId] !== undefined ? customShares[mId] : '';
+    const paise = parseAmountToPaise(inputVal);
+    return { userId: mId, amountPaise: paise };
+  });
+
+  const customValidation = validateCustomSplit(amountPaise, customSplitShares);
+
+  const handleSplitMethodChange = (method: 'EQUAL' | 'CUSTOM') => {
+    setSplitMethod(method);
+    setError(null);
+    if (method === 'CUSTOM') {
+      const currentPaise = parseAmountToPaise(amountStr);
+      if (currentPaise > 0) {
+        const membersToSplit = participantIds.length > 0 ? participantIds : groupMembers.map((m: any) => m.userId || m.id);
+        const eq = calculateEqualSplit(currentPaise, membersToSplit);
+        const initial: Record<string, string> = {};
+        for (const s of eq) {
+          initial[s.userId] = (s.amountPaise / 100).toFixed(2);
+        }
+        setCustomShares(initial);
+      }
+    }
+  };
+
+  const handleCustomShareChange = (memberId: string, val: string) => {
+    const cleaned = val.replace(/[^0-9.]/g, '');
+    const parts = cleaned.split('.');
+    const sanitized = parts.length > 2 ? `${parts[0]}.${parts.slice(1).join('')}` : cleaned;
+    setCustomShares((prev) => ({
+      ...prev,
+      [memberId]: sanitized,
+    }));
+    setError(null);
+  };
+
+  const splitRemainingEvenly = () => {
+    const currentPaise = parseAmountToPaise(amountStr);
+    if (currentPaise <= 0 || groupMembers.length === 0) return;
+    const allMemberIds = groupMembers.map((m: any) => m.userId || m.id);
+    const eq = calculateEqualSplit(currentPaise, allMemberIds);
+    const updated: Record<string, string> = {};
+    for (const s of eq) {
+      updated[s.userId] = (s.amountPaise / 100).toFixed(2);
+    }
+    setCustomShares(updated);
+  };
+
+  const resetAllCustomSharesToZero = () => {
+    const updated: Record<string, string> = {};
+    for (const m of groupMembers) {
+      const mId = m.userId || m.id;
+      updated[mId] = '0.00';
+    }
+    setCustomShares(updated);
+  };
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -201,9 +272,16 @@ export default function AddExpenseScreen() {
       setError('Please select a group');
       return;
     }
-    if (participantIds.length === 0) {
+    if (splitMethod === 'EQUAL' && participantIds.length === 0) {
       setError('Please select at least one participant');
       return;
+    }
+
+    if (splitMethod === 'CUSTOM') {
+      if (!customValidation.isValid) {
+        setError(customValidation.error || 'Total allocated amount must equal the expense total.');
+        return;
+      }
     }
 
     setError(null);
@@ -230,6 +308,11 @@ export default function AddExpenseScreen() {
         docIdToLink = createdDoc.id;
       }
 
+      const effectiveParticipants =
+        splitMethod === 'CUSTOM'
+          ? customSplitShares.filter((s) => s.amountPaise > 0).map((s) => s.userId)
+          : participantIds;
+
       await api.createExpense({
         groupId: selectedGroupId,
         title: title.trim(),
@@ -239,8 +322,9 @@ export default function AddExpenseScreen() {
         date: new Date().toISOString(),
         payerId,
         payerName: payerObj?.name || 'You',
-        participants: participantIds,
-        splitType: 'EQUAL',
+        participants: effectiveParticipants.length > 0 ? effectiveParticipants : participantIds,
+        splitType: splitMethod,
+        customSplits: splitMethod === 'CUSTOM' ? customSplitShares : undefined,
         notes: notes.trim() || undefined,
         attachedDocId: docIdToLink,
       });
@@ -252,6 +336,7 @@ export default function AddExpenseScreen() {
       setLoading(false);
     }
   };
+
 
   return (
     <KeyboardAvoidingView
@@ -480,55 +565,265 @@ export default function AddExpenseScreen() {
           })}
         </View>
 
-        {/* Split With / Participants Selection */}
+        {/* Split Method Segmented Selector */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
-          Split Equally Between ({participantIds.length} members)
+          Split Method
         </Text>
-        <View style={styles.participantsGrid}>
-          {groupMembers.map((m: any) => {
-            const mId = m.userId || m.id;
-            const isSelected = participantIds.includes(mId);
-            return (
-              <TouchableOpacity
-                key={mId}
-                activeOpacity={0.7}
-                onPress={() => toggleParticipant(mId)}
-                style={[
-                  styles.participantBox,
-                  {
-                    backgroundColor: isSelected
-                      ? isDark
-                        ? 'rgba(124, 58, 237, 0.18)'
-                        : '#F5F3FF'
-                      : colors.surface,
-                    borderColor: isSelected ? colors.primary : colors.border,
-                  },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name={isSelected ? 'checkbox-marked-circle' : 'checkbox-blank-circle-outline'}
-                  size={18}
-                  color={isSelected ? colors.primary : colors.textTertiary}
-                />
+        <View style={[styles.splitMethodTabs, { backgroundColor: colors.surfaceAlt }]}>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => handleSplitMethodChange('EQUAL')}
+            style={[
+              styles.splitMethodTab,
+              splitMethod === 'EQUAL' && [
+                styles.splitMethodTabActive,
+                { backgroundColor: colors.surface, borderColor: colors.borderLight },
+              ],
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="equal"
+              size={18}
+              color={splitMethod === 'EQUAL' ? colors.primary : colors.textMuted}
+            />
+            <Text
+              style={[
+                styles.splitMethodTabText,
+                {
+                  color: splitMethod === 'EQUAL' ? colors.primary : colors.textMuted,
+                  fontWeight: splitMethod === 'EQUAL' ? '700' : '500',
+                },
+              ]}
+            >
+              Equal Split
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => handleSplitMethodChange('CUSTOM')}
+            style={[
+              styles.splitMethodTab,
+              splitMethod === 'CUSTOM' && [
+                styles.splitMethodTabActive,
+                { backgroundColor: colors.surface, borderColor: colors.borderLight },
+              ],
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="calculator"
+              size={18}
+              color={splitMethod === 'CUSTOM' ? colors.primary : colors.textMuted}
+            />
+            <Text
+              style={[
+                styles.splitMethodTabText,
+                {
+                  color: splitMethod === 'CUSTOM' ? colors.primary : colors.textMuted,
+                  fontWeight: splitMethod === 'CUSTOM' ? '700' : '500',
+                },
+              ]}
+            >
+              Custom Amount
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* EQUAL SPLIT: PARTICIPANTS CHECKBOXES */}
+        {splitMethod === 'EQUAL' ? (
+          <>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary, marginTop: Spacing.sm }]}>
+              Split With ({participantIds.length} members)
+            </Text>
+            <View style={styles.participantsGrid}>
+              {groupMembers.map((m: any) => {
+                const mId = m.userId || m.id;
+                const isSelected = participantIds.includes(mId);
+                return (
+                  <TouchableOpacity
+                    key={mId}
+                    activeOpacity={0.7}
+                    onPress={() => toggleParticipant(mId)}
+                    style={[
+                      styles.participantBox,
+                      {
+                        backgroundColor: isSelected
+                          ? isDark
+                            ? 'rgba(124, 58, 237, 0.18)'
+                            : '#F5F3FF'
+                          : colors.surface,
+                        borderColor: isSelected ? colors.primary : colors.border,
+                      },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name={isSelected ? 'checkbox-marked-circle' : 'checkbox-blank-circle-outline'}
+                      size={18}
+                      color={isSelected ? colors.primary : colors.textTertiary}
+                    />
+                    <Text
+                      style={[
+                        styles.participantName,
+                        {
+                          color: isSelected
+                            ? isDark
+                              ? colors.primaryLight
+                              : colors.primaryDark
+                            : colors.textSecondary,
+                          fontWeight: isSelected ? '700' : '500',
+                        },
+                      ]}
+                    >
+                      {m.name} {mId === user?.id ? '(You)' : ''}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </>
+        ) : (
+          /* CUSTOM AMOUNT SPLIT INTERFACE */
+          <View
+            style={[
+              styles.customSplitContainer,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.borderLight,
+              },
+            ]}
+          >
+            {/* Header: Total, Allocated, Remaining */}
+            <View style={[styles.customSplitSummary, { backgroundColor: colors.surfaceAlt }]}>
+              <View style={styles.customSplitCol}>
+                <Text style={[styles.customSplitLabel, { color: colors.textMuted }]}>Total Bill</Text>
+                <Text style={[styles.customSplitVal, { color: colors.text }]}>
+                  {formatCurrency(amountPaise, activeGroup?.currency || 'INR')}
+                </Text>
+              </View>
+              <View style={[styles.customSplitDivider, { backgroundColor: colors.borderLight }]} />
+              <View style={styles.customSplitCol}>
+                <Text style={[styles.customSplitLabel, { color: colors.textMuted }]}>Allocated</Text>
+                <Text style={[styles.customSplitVal, { color: colors.text }]}>
+                  {formatCurrency(customValidation.allocatedPaise, activeGroup?.currency || 'INR')}
+                </Text>
+              </View>
+              <View style={[styles.customSplitDivider, { backgroundColor: colors.borderLight }]} />
+              <View style={styles.customSplitCol}>
+                <Text style={[styles.customSplitLabel, { color: colors.textMuted }]}>Remaining</Text>
                 <Text
                   style={[
-                    styles.participantName,
+                    styles.customSplitVal,
                     {
-                      color: isSelected
-                        ? isDark
-                          ? colors.primaryLight
-                          : colors.primaryDark
-                        : colors.textSecondary,
-                      fontWeight: isSelected ? '700' : '500',
+                      color:
+                        customValidation.status === 'BALANCED'
+                          ? colors.positive
+                          : customValidation.status === 'OVER_ALLOCATED'
+                          ? colors.negative
+                          : colors.warning,
                     },
                   ]}
                 >
-                  {m.name} {mId === user?.id ? '(You)' : ''}
+                  {formatCurrency(customValidation.remainingPaise, activeGroup?.currency || 'INR')}
                 </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+              </View>
+            </View>
+
+            {/* Status Badge & Quick Tools */}
+            <View style={styles.customSplitStatusBar}>
+              <Badge
+                label={
+                  customValidation.status === 'BALANCED'
+                    ? '✓ Balanced'
+                    : customValidation.status === 'OVER_ALLOCATED'
+                    ? `Over-allocated by ${formatCurrency(Math.abs(customValidation.remainingPaise), 'INR')}`
+                    : `Remaining: ${formatCurrency(customValidation.remainingPaise, 'INR')}`
+                }
+                variant={
+                  customValidation.status === 'BALANCED'
+                    ? 'positive'
+                    : customValidation.status === 'OVER_ALLOCATED'
+                    ? 'negative'
+                    : 'warning'
+                }
+              />
+
+              <View style={styles.customToolsRow}>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={splitRemainingEvenly}
+                  style={[styles.customToolBtn, { backgroundColor: colors.surfaceAlt }]}
+                >
+                  <Text style={[styles.customToolBtnText, { color: colors.primary }]}>Split Evenly</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={resetAllCustomSharesToZero}
+                  style={[styles.customToolBtn, { backgroundColor: colors.surfaceAlt }]}
+                >
+                  <Text style={[styles.customToolBtnText, { color: colors.textMuted }]}>Reset to ₹0</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Member Input Rows */}
+            <View style={styles.customMembersList}>
+              {groupMembers.map((m: any, mIdx: number) => {
+                const mId = m.userId || m.id;
+                const currentVal = customShares[mId] !== undefined ? customShares[mId] : '';
+                return (
+                  <View
+                    key={mId}
+                    style={[
+                      styles.customMemberRow,
+                      mIdx < groupMembers.length - 1 && {
+                        borderBottomWidth: 1,
+                        borderBottomColor: colors.borderLight,
+                      },
+                    ]}
+                  >
+                    <Avatar name={m.name} size="sm" />
+                    <View style={styles.customMemberInfo}>
+                      <Text style={[styles.customMemberName, { color: colors.text }]} numberOfLines={1}>
+                        {m.name} {mId === user?.id ? '(You)' : ''}
+                      </Text>
+                    </View>
+
+                    {/* Quick ₹0 button */}
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={() => handleCustomShareChange(mId, '0.00')}
+                      style={[styles.quickZeroBtn, { backgroundColor: colors.surfaceAlt }]}
+                    >
+                      <Text style={[styles.quickZeroText, { color: colors.textMuted }]}>₹0</Text>
+                    </TouchableOpacity>
+
+                    {/* Amount Input */}
+                    <View
+                      style={[
+                        styles.customInputWrap,
+                        {
+                          backgroundColor: colors.surfaceAlt,
+                          borderColor: colors.border,
+                        },
+                      ]}
+                    >
+                      <Text style={[styles.customCurrencyPrefix, { color: colors.textMuted }]}>₹</Text>
+                      <TextInput
+                        style={[styles.customShareInput, { color: colors.text }]}
+                        value={currentVal}
+                        onChangeText={(txt) => handleCustomShareChange(mId, txt)}
+                        placeholder="0.00"
+                        placeholderTextColor={colors.placeholder}
+                        keyboardType="decimal-pad"
+                      />
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+
 
         {/* Notes (Optional) */}
         <Input
@@ -732,7 +1027,7 @@ export default function AddExpenseScreen() {
         )}
 
         {/* Split Preview with Exact Paise Calculation */}
-        {amountPaise > 0 && splits.length > 0 && (
+        {amountPaise > 0 && (
           <View
             style={[
               styles.splitPreviewCard,
@@ -749,29 +1044,54 @@ export default function AddExpenseScreen() {
               ]}
             >
               <Text style={[styles.splitPreviewTitle, { color: colors.textSecondary }]}>
-                Exact Split Breakdown
+                {splitMethod === 'EQUAL' ? 'Equal Split Breakdown' : 'Custom Split Allocation'}
               </Text>
               <Text style={[styles.splitPreviewTotal, { color: colors.primary }]}>
                 Total: {formatCurrency(amountPaise, 'INR')}
               </Text>
             </View>
-            {splits.map((s) => {
-              const memberObj = groupMembers.find(
-                (m: any) => (m.userId || m.id) === s.userId
-              );
-              return (
-                <View key={s.userId} style={styles.splitPreviewRow}>
-                  <Text style={[styles.splitMemberName, { color: colors.text }]}>
-                    {memberObj?.name || s.userId}
-                  </Text>
-                  <Text style={[styles.splitMemberShare, { color: colors.text }]}>
-                    {formatCurrency(s.amountPaise, 'INR')}
-                  </Text>
-                </View>
-              );
-            })}
+
+            {splitMethod === 'EQUAL' ? (
+              equalSplits.map((s) => {
+                const memberObj = groupMembers.find(
+                  (m: any) => (m.userId || m.id) === s.userId
+                );
+                return (
+                  <View key={s.userId} style={styles.splitPreviewRow}>
+                    <Text style={[styles.splitMemberName, { color: colors.text }]}>
+                      {memberObj?.name || s.userId}
+                    </Text>
+                    <Text style={[styles.splitMemberShare, { color: colors.text }]}>
+                      {formatCurrency(s.amountPaise, 'INR')}
+                    </Text>
+                  </View>
+                );
+              })
+            ) : (
+              customSplitShares.map((s) => {
+                const memberObj = groupMembers.find(
+                  (m: any) => (m.userId || m.id) === s.userId
+                );
+                return (
+                  <View key={s.userId} style={styles.splitPreviewRow}>
+                    <Text style={[styles.splitMemberName, { color: colors.text }]}>
+                      {memberObj?.name || s.userId}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.splitMemberShare,
+                        { color: s.amountPaise > 0 ? colors.text : colors.textMuted },
+                      ]}
+                    >
+                      {formatCurrency(s.amountPaise, 'INR')}
+                    </Text>
+                  </View>
+                );
+              })
+            )}
           </View>
         )}
+
 
         <View style={styles.saveBtnWrapper}>
           <Button
@@ -1061,4 +1381,126 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   saveBtn: {},
+  splitMethodTabs: {
+    flexDirection: 'row',
+    borderRadius: Radius.md,
+    padding: 3,
+    marginBottom: Spacing.md,
+  },
+  splitMethodTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: Radius.sm,
+    gap: 6,
+  },
+  splitMethodTabActive: {
+    borderWidth: 1,
+    ...Shadows.sm,
+  },
+  splitMethodTabText: {
+    fontSize: 13,
+  },
+  customSplitContainer: {
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: Spacing.md,
+  },
+  customSplitSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+  },
+  customSplitCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  customSplitDivider: {
+    width: 1,
+    height: 24,
+  },
+  customSplitLabel: {
+    fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  customSplitVal: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  customSplitStatusBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs + 2,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  customToolsRow: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+  },
+  customToolBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.sm,
+  },
+  customToolBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  customMembersList: {
+    paddingHorizontal: Spacing.md,
+  },
+  customMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  customMemberInfo: {
+    flex: 1,
+    marginLeft: Spacing.sm,
+    marginRight: Spacing.xs,
+  },
+  customMemberName: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  quickZeroBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: Radius.sm,
+    marginRight: 6,
+  },
+  quickZeroText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  customInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 8,
+    width: 110,
+    height: 38,
+  },
+  customCurrencyPrefix: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginRight: 4,
+  },
+  customShareInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    paddingVertical: 0,
+  },
 });
+

@@ -551,8 +551,176 @@ class DatabaseService {
     return newGrp;
   }
 
+  /**
+   * Permanently deletes a group and all associated records exclusively belonging to it:
+   * - Expenses and bills
+   * - Expense split allocations
+   * - Expense payment records
+   * - Settlement records and repayment history
+   * - Group-specific members and membership records
+   * - Group-linked receipt attachments and physical files
+   * - Audit activities
+   * - The group record itself
+   *
+   * Executes inside an atomic SQLite transaction with safe foreign key order.
+   * Does NOT affect shared user accounts or records of other groups.
+   */
+  async deleteGroup(groupId: string): Promise<void> {
+    await this.init();
+
+    if (this.db) {
+      // 1. Fetch document storage paths belonging to this group
+      const docs = await this.db.getAllAsync<{ storage_path: string }>(
+        'SELECT storage_path FROM group_documents WHERE group_id = ?',
+        [groupId]
+      );
+
+      // 2. Perform cascade deletion inside an atomic SQLite transaction
+      await this.db.withTransactionAsync(async () => {
+        await this.db!.runAsync(
+          'DELETE FROM expense_splits WHERE expense_id IN (SELECT id FROM expenses WHERE group_id = ?)',
+          [groupId]
+        );
+        await this.db!.runAsync(
+          'DELETE FROM expense_payments WHERE expense_id IN (SELECT id FROM expenses WHERE group_id = ?)',
+          [groupId]
+        );
+        await this.db!.runAsync('DELETE FROM group_documents WHERE group_id = ?', [groupId]);
+        await this.db!.runAsync('DELETE FROM settlements WHERE group_id = ?', [groupId]);
+        await this.db!.runAsync('DELETE FROM activities WHERE group_id = ?', [groupId]);
+        await this.db!.runAsync('DELETE FROM expenses WHERE group_id = ?', [groupId]);
+        await this.db!.runAsync('DELETE FROM group_members WHERE group_id = ?', [groupId]);
+        await this.db!.runAsync('DELETE FROM groups WHERE id = ?', [groupId]);
+      });
+
+      // 3. Clean up physical files on disk
+      for (const d of docs) {
+        if (d.storage_path && !d.storage_path.startsWith('http')) {
+          try {
+            const FileSystem = require('expo-file-system');
+            await FileSystem.deleteAsync(d.storage_path, { idempotent: true });
+          } catch {}
+        }
+      }
+
+      return;
+    }
+
+    // Web fallback
+    try {
+      const rawGroups = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'groups');
+      if (rawGroups) {
+        const groups = JSON.parse(rawGroups).filter((g: any) => g.id !== groupId);
+        await AsyncStorage.setItem(WEB_STORAGE_PREFIX + 'groups', JSON.stringify(groups));
+      }
+      const rawExpenses = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'expenses');
+      if (rawExpenses) {
+        const expenses = JSON.parse(rawExpenses).filter((e: any) => e.groupId !== groupId);
+        await AsyncStorage.setItem(WEB_STORAGE_PREFIX + 'expenses', JSON.stringify(expenses));
+      }
+      const rawDocs = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'documents');
+      if (rawDocs) {
+        const docs = JSON.parse(rawDocs).filter((d: any) => d.groupId !== groupId);
+        await AsyncStorage.setItem(WEB_STORAGE_PREFIX + 'documents', JSON.stringify(docs));
+      }
+      const rawSettlements = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'settlements');
+      if (rawSettlements) {
+        const settlements = JSON.parse(rawSettlements).filter((s: any) => s.group_id !== groupId);
+        await AsyncStorage.setItem(WEB_STORAGE_PREFIX + 'settlements', JSON.stringify(settlements));
+      }
+    } catch {}
+  }
+
+  /**
+   * Clears all financial records for a group without deleting the group itself:
+   * - Expenses and bills
+   * - Split allocations
+   * - Payment records
+   * - Settlement records
+   * - Receipt files exclusively associated with cleared expenses
+   *
+   * Preserves:
+   * - The group record
+   * - Group members & their roles
+   * - Group budget & settings
+   * - Standalone group documents not linked to expenses
+   */
+  async clearGroupExpenses(groupId: string): Promise<void> {
+    await this.init();
+
+    if (this.db) {
+      // 1. Fetch document storage paths attached exclusively to expenses
+      const expenseDocs = await this.db.getAllAsync<{ storage_path: string }>(
+        'SELECT storage_path FROM group_documents WHERE group_id = ? AND expense_id IS NOT NULL',
+        [groupId]
+      );
+
+      // 2. Perform clearing inside an atomic SQLite transaction
+      await this.db.withTransactionAsync(async () => {
+        await this.db!.runAsync(
+          'DELETE FROM expense_splits WHERE expense_id IN (SELECT id FROM expenses WHERE group_id = ?)',
+          [groupId]
+        );
+        await this.db!.runAsync(
+          'DELETE FROM expense_payments WHERE expense_id IN (SELECT id FROM expenses WHERE group_id = ?)',
+          [groupId]
+        );
+        await this.db!.runAsync(
+          'DELETE FROM group_documents WHERE group_id = ? AND expense_id IS NOT NULL',
+          [groupId]
+        );
+        await this.db!.runAsync('DELETE FROM settlements WHERE group_id = ?', [groupId]);
+        await this.db!.runAsync('DELETE FROM expenses WHERE group_id = ?', [groupId]);
+        await this.db!.runAsync(
+          `INSERT INTO activities (id, group_id, user_id, action, message, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            `act-${Date.now()}`,
+            groupId,
+            CURRENT_USER.id,
+            'FINANCES_CLEARED',
+            'All bills, expenses, and settlements were cleared for this group.',
+            new Date().toISOString(),
+          ]
+        );
+      });
+
+      // 3. Clean up physical files for cleared expense receipts
+      for (const d of expenseDocs) {
+        if (d.storage_path && !d.storage_path.startsWith('http')) {
+          try {
+            const FileSystem = require('expo-file-system');
+            await FileSystem.deleteAsync(d.storage_path, { idempotent: true });
+          } catch {}
+        }
+      }
+
+      return;
+    }
+
+    // Web fallback
+    try {
+      const rawExpenses = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'expenses');
+      if (rawExpenses) {
+        const expenses = JSON.parse(rawExpenses).filter((e: any) => e.groupId !== groupId);
+        await AsyncStorage.setItem(WEB_STORAGE_PREFIX + 'expenses', JSON.stringify(expenses));
+      }
+      const rawSettlements = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'settlements');
+      if (rawSettlements) {
+        const settlements = JSON.parse(rawSettlements).filter((s: any) => s.group_id !== groupId);
+        await AsyncStorage.setItem(WEB_STORAGE_PREFIX + 'settlements', JSON.stringify(settlements));
+      }
+      const rawDocs = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'documents');
+      if (rawDocs) {
+        const docs = JSON.parse(rawDocs).filter((d: any) => !(d.groupId === groupId && d.expenseId));
+        await AsyncStorage.setItem(WEB_STORAGE_PREFIX + 'documents', JSON.stringify(docs));
+      }
+    } catch {}
+  }
+
   // --- Manual Group Member Management (Offline & Direct) ---
   async getGroupMembers(groupId: string, includeArchived = true): Promise<ReportMemberSummary[]> {
+
     await this.init();
 
     if (this.db) {
@@ -1400,12 +1568,19 @@ class DatabaseService {
     payerName?: string;
     participants: string[];
     splitType?: string;
+    customSplits?: { userId: string; amountPaise: number }[];
     notes?: string;
     attachedDocId?: string;
   }): Promise<any> {
     await this.init();
     const id = 'exp-' + Date.now();
     const now = new Date().toISOString();
+
+    const effectiveSplitType = input.splitType || (input.customSplits && input.customSplits.length > 0 ? 'CUSTOM' : 'EQUAL');
+    const splits =
+      effectiveSplitType === 'CUSTOM' && input.customSplits && input.customSplits.length > 0
+        ? input.customSplits
+        : calculateEqualSplit(input.amountPaise, input.participants);
 
     if (this.db) {
       await this.db.withTransactionAsync(async () => {
@@ -1432,12 +1607,12 @@ class DatabaseService {
           [`pay-${id}`, id, input.payerId, input.amountPaise]
         );
 
-        const splits = calculateEqualSplit(input.amountPaise, input.participants);
         for (const s of splits) {
+          const sharePaise = 'amountPaise' in s ? s.amountPaise : (s as any).amount;
           await this.db!.runAsync(
             `INSERT INTO expense_splits (id, expense_id, user_id, amount_paise, split_type)
              VALUES (?, ?, ?, ?, ?)`,
-            [`split-${id}-${s.userId}`, id, s.userId, s.amountPaise, input.splitType || 'EQUAL']
+            [`split-${id}-${s.userId}`, id, s.userId, sharePaise, effectiveSplitType]
           );
         }
 
@@ -1469,7 +1644,8 @@ class DatabaseService {
     const raw = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'expenses');
     const existing = raw ? JSON.parse(raw) : [];
     const isCurrentUserPayer = input.payerId === CURRENT_USER.id;
-    const userSharePaise = Math.floor(input.amountPaise / (input.participants.length || 1));
+    const mySplit = splits.find((s) => s.userId === CURRENT_USER.id);
+    const userSharePaise = mySplit ? ('amountPaise' in mySplit ? mySplit.amountPaise : (mySplit as any).amount) : 0;
 
     const newExp = {
       id,
@@ -1483,19 +1659,20 @@ class DatabaseService {
       payerId: input.payerId,
       payerName: input.payerName || 'You',
       isCurrentUserPayer,
-      participantCount: input.participants.length,
+      participantCount: splits.length || input.participants.length,
       userSharePaise,
-      splits: input.participants.map((p) => ({
-        userId: p,
-        userName: p === CURRENT_USER.id ? 'You' : 'Member',
-        amountPaise: userSharePaise,
-        splitType: 'EQUAL',
+      splits: splits.map((s) => ({
+        userId: s.userId,
+        userName: s.userId === CURRENT_USER.id ? 'You' : 'Member',
+        amountPaise: 'amountPaise' in s ? s.amountPaise : (s as any).amount,
+        splitType: effectiveSplitType,
       })),
       receipts: [],
     };
     await AsyncStorage.setItem(WEB_STORAGE_PREFIX + 'expenses', JSON.stringify([newExp, ...existing]));
     return newExp;
   }
+
 
   async deleteExpense(id: string): Promise<void> {
     await this.init();

@@ -22,7 +22,9 @@ import { api } from '../../src/services/api';
 import { GroupDocumentRow } from '../../src/services/database';
 import { useTheme } from '../../src/theme/ThemeContext';
 import { Radius, Shadows, Spacing, Typography } from '../../src/theme/tokens';
+import { WhatsAppReminderModal } from '../../src/components/common/WhatsAppReminderModal';
 import { formatCurrency } from '../../src/utils/finance';
+import { buildExpenseSplitMessage } from '../../src/utils/whatsapp';
 
 export default function ExpenseDetailsScreen() {
   const router = useRouter();
@@ -30,17 +32,36 @@ export default function ExpenseDetailsScreen() {
   const { colors, isDark } = useTheme();
 
   const [expense, setExpense] = useState<any>(null);
+  const [group, setGroup] = useState<any>(null);
+  const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<GroupDocumentRow | null>(null);
 
+  // WhatsApp Reminder State
+  const [whatsappModalVisible, setWhatsappModalVisible] = useState(false);
+  const [whatsappTarget, setWhatsappTarget] = useState<{
+    recipientName: string;
+    memberUserId?: string;
+    phoneNumber?: string;
+    message: string;
+  } | null>(null);
+
   const loadExpense = useCallback(async () => {
     if (!id) return;
     try {
       const data = await api.getExpenseById(id);
       setExpense(data);
+      if (data?.groupId) {
+        const [grp, mems] = await Promise.all([
+          api.getGroupById(data.groupId),
+          api.getGroupMembers(data.groupId, true),
+        ]);
+        setGroup(grp);
+        setMembers(mems);
+      }
     } catch (err) {
       console.warn('Failed to load expense details:', err);
     } finally {
@@ -48,6 +69,7 @@ export default function ExpenseDetailsScreen() {
       setRefreshing(false);
     }
   }, [id]);
+
 
   useEffect(() => {
     loadExpense();
@@ -151,6 +173,22 @@ export default function ExpenseDetailsScreen() {
                 year: 'numeric',
               })}
             </Text>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => {
+                const msg = `Hi,\n\nHere are the details for "${expense.title}" in ${group?.name || 'TripMate'}:\nTotal Bill: ${formatCurrency(expense.amountPaise, expense.currency)}\nPaid by: ${expense.payerName}\nDate: ${new Date(expense.date).toLocaleDateString('en-IN')}\n\nSplit among ${expense.participantCount} members.`;
+                setWhatsappTarget({
+                  recipientName: 'Group Contact',
+                  phoneNumber: '',
+                  message: msg,
+                });
+                setWhatsappModalVisible(true);
+              }}
+              style={styles.heroWhatsAppBtn}
+            >
+              <Ionicons name="logo-whatsapp" size={13} color="#25D366" />
+              <Text style={styles.heroWhatsAppBtnText}>Share Bill</Text>
+            </TouchableOpacity>
           </View>
 
           {expense.notes && (
@@ -199,9 +237,37 @@ export default function ExpenseDetailsScreen() {
                     {s.splitType === 'EQUAL' ? 'Equal share' : 'Custom split'}
                   </Text>
                 </View>
-                <Text style={[styles.splitAmount, { color: colors.text }]}>
-                  {formatCurrency(s.amountPaise, expense.currency)}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs }}>
+                  <Text style={[styles.splitAmount, { color: colors.text }]}>
+                    {formatCurrency(s.amountPaise, expense.currency)}
+                  </Text>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => {
+                      const memberData = members.find((m: any) => (m.userId || m.id) === s.userId);
+                      const msg = buildExpenseSplitMessage({
+                        recipientName: s.userName,
+                        groupName: group?.name || 'TripMate Group',
+                        expenseTitle: expense.title,
+                        totalAmountPaise: expense.amountPaise,
+                        userSharePaise: s.amountPaise,
+                        payerName: expense.payerName,
+                        currency: expense.currency,
+                      });
+                      setWhatsappTarget({
+                        recipientName: s.userName,
+                        memberUserId: s.userId,
+                        phoneNumber: memberData?.phone || '',
+                        message: msg,
+                      });
+                      setWhatsappModalVisible(true);
+                    }}
+                    style={styles.splitWhatsAppBtn}
+                    accessibilityLabel="WhatsApp Split Reminder"
+                  >
+                    <Ionicons name="logo-whatsapp" size={16} color="#25D366" />
+                  </TouchableOpacity>
+                </View>
               </View>
             ))
           ) : (
@@ -210,6 +276,7 @@ export default function ExpenseDetailsScreen() {
             </Text>
           )}
         </View>
+
 
         {/* Associated Receipts & Invoices */}
         <View style={styles.sectionHeaderRow}>
@@ -270,9 +337,31 @@ export default function ExpenseDetailsScreen() {
         onConfirm={handleDeleteExpense}
         onCancel={() => setDeleteConfirmVisible(false)}
       />
+
+      {/* WhatsApp Split Reminder Modal */}
+      {whatsappTarget && (
+        <WhatsAppReminderModal
+          visible={whatsappModalVisible}
+          title="WhatsApp Split Reminder"
+          recipientName={whatsappTarget.recipientName}
+          initialPhoneNumber={whatsappTarget.phoneNumber}
+          defaultMessage={whatsappTarget.message}
+          onClose={() => {
+            setWhatsappModalVisible(false);
+            setWhatsappTarget(null);
+          }}
+          onSavePhoneNumber={async (newPhone) => {
+            if (whatsappTarget.memberUserId && expense.groupId) {
+              await api.updateGroupMember(expense.groupId, whatsappTarget.memberUserId, { phone: newPhone });
+              await loadExpense();
+            }
+          }}
+        />
+      )}
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
@@ -441,4 +530,29 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
     textAlign: 'center',
   },
+  splitWhatsAppBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+  },
+  heroWhatsAppBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.full,
+    marginLeft: Spacing.xs,
+    gap: 4,
+  },
+  heroWhatsAppBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
 });
+

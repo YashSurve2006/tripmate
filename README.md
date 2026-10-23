@@ -12,7 +12,7 @@
 
 [![GitHub Release](https://img.shields.io/github/v/release/YashSurve2006/tripmate?style=for-the-badge&color=7C3AED&labelColor=1E1B4B&logo=github)](https://github.com/YashSurve2006/tripmate/releases/tag/v1.0.0)
 [![Download APK](https://img.shields.io/badge/Download_APK-v1.0.0-10B981?style=for-the-badge&logo=android&logoColor=white&labelColor=064E3B)](https://github.com/YashSurve2006/tripmate/releases/download/v1.0.0/TripMate-release.apk)
-[![Tests](https://img.shields.io/badge/Tests-67%2F67_Passing-0D9488?style=for-the-badge&logo=jest&logoColor=white&labelColor=042F2E)](.)
+[![Tests](https://img.shields.io/badge/Tests-141%2F141_Passing-0D9488?style=for-the-badge&logo=jest&logoColor=white&labelColor=042F2E)](.)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge&labelColor=1E1B4B)](./LICENSE)
 
 <br/>
@@ -120,6 +120,9 @@ The production Android APK is built, tested, and available directly from GitHub 
 
 - **100% Offline SQLite**: Zero cloud sync required. All trips, expenses, splits, settlements, and member details reside strictly in your phone's internal storage (`expo-sqlite`).
 - **Exact Minor-Unit Math**: Calculates every transaction in integer **paise** to eliminate floating-point drift.
+- **Custom Amount-Wise Splitting**: Support for both Equal and Custom exact paise allocations. Members can owe custom amounts or ₹0 with live remaining calculations and balanced validation badges.
+- **Safe Group Management**: One-tap **Clear Bills & Expenses** (resets balances to ₹0 while preserving group and members) and **Delete Group** (full transactional SQLite cascade and receipt file cleanup).
+- **Direct WhatsApp Reminders**: Direct `https://wa.me/` deep-linking with international phone number normalization (e.g. `+91 88507 06982` → `918850706982`) and dynamic, pre-filled split and settlement messages.
 - **Smart Settle-Up**: Greedy debt simplification reduces complex group debts into the fewest possible bilateral transfers.
 - **10-Sheet Excel (.xlsx) Export**: Generates professional OpenXML spreadsheets with genuine `=SUM()` formulas and individual balance ledgers.
 - **Document & Bill Vault**: Attach receipts, tickets, and bills via Camera, Gallery, or PDF, safely isolated per group.
@@ -157,6 +160,31 @@ The greedy `simplifyDebts()` algorithm simplifies multi-party debt networks:
 | **Sum of balances = ₹0** | ✅ Displays *"All Settled Up!"* when debts reach zero |
 
 $$\text{Net Balance} = (\text{Total Paid} - \text{Fair Share}) + \text{Settlements Received} - \text{Settlements Paid}$$
+
+### ⚖️ Custom Amount-Wise Expense Splitting
+
+TripMate supports both **Equal Split** and **Custom Amount Split** modes in the Add/Edit Expense workflow:
+- **Eligible Member List**: Displays every participant with currency-formatted numeric inputs.
+- **₹0 Non-Payer Support**: Tap **₹0** to exempt non-consuming members from an expense.
+- **Live Allocation Counters**: Real-time Allocated Total and Remaining balance calculations.
+- **Status Badges**:
+  - 🟢 `BALANCED` (Allocated matches total exactly — saving enabled)
+  - 🟡 `UNDER-ALLOCATED` (Remaining amount displayed)
+  - 🔴 `OVER-ALLOCATED` (Exceeded amount highlighted)
+- **Decimal Precision**: Accurate integer paise handling for amounts like ₹123.45 with zero float rounding errors.
+
+### 🛡️ Group Management & Financial Reset
+
+Accessible via the group header menu (`⋮`) and the Group Overview hub:
+- **Clear Bills & Expenses**: Clears all expenses, splits, payment records, settlements, and expense-linked receipt files. Retains the group, all members, and settings. Resets member balances to ₹0.00 instantly.
+- **Delete Group**: Safe SQLite transaction that cascades through all group-specific tables (`expenses`, `expense_splits`, `expense_payments`, `settlements`, `activities`, `group_documents`, `group_members`, and `groups`) while cleaning up physical receipt files from disk. Never deletes shared user profiles or data from other groups.
+
+### 💬 WhatsApp Integration & Smart Deep-Linking
+
+Send dynamic expense splits and settlement debt reminders straight into WhatsApp chats via official `wa.me` deep-linking:
+- **Phone Normalization**: Accepts raw formatted inputs (e.g. `+91 88507 06982`) and normalizes to E.164 without spaces or plus signs (`918850706982`). Automatically adds India `91` country code for 10-digit domestic numbers.
+- **Dynamic Pre-Filled Messages**: Fully dynamic messages generated with actual group names, expense titles, total bill amounts, payer names, and the recipient's individual fair share.
+- **Settlement Reminders**: Accessible from member profiles and the Balances tab to remind debtors with minimal transfers.
 
 ---
 
@@ -265,7 +293,7 @@ npm install
 # 2. Run TypeScript checks across all workspaces (mobile, shared, backend)
 npm run typecheck
 
-# 3. Run all test suites (67/67 unit, persistence, and E2E tests)
+# 3. Run all test suites (141/141 unit, persistence, and E2E tests)
 npm test
 
 # 4. Start local development Metro bundler

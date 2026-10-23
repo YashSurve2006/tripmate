@@ -111,7 +111,18 @@ export class OfflineFirstRepository {
     return dbService.createGroup(input);
   }
 
+  async deleteGroup(groupId: string): Promise<void> {
+    await this.init();
+    return dbService.deleteGroup(groupId);
+  }
+
+  async clearGroupExpenses(groupId: string): Promise<void> {
+    await this.init();
+    return dbService.clearGroupExpenses(groupId);
+  }
+
   // --- Manual Group Member Management ---
+
   async getGroupMembers(groupId: string, includeArchived?: boolean): Promise<ReportMemberSummary[]> {
     await this.init();
     return dbService.getGroupMembers(groupId, includeArchived);
@@ -184,12 +195,14 @@ export class OfflineFirstRepository {
     payerName?: string;
     participants: string[];
     splitType?: string;
+    customSplits?: { userId: string; amountPaise: number }[];
     notes?: string;
     attachedDocId?: string;
   }): Promise<any> {
     await this.init();
     return dbService.createExpense(expenseInput);
   }
+
 
   async deleteExpense(id: string): Promise<void> {
     await this.init();

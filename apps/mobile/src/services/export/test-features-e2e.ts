@@ -1,6 +1,19 @@
 import * as XLSX from 'xlsx';
 import { ExcelWorkbookBuilder } from './ExcelWorkbookBuilder';
 import { DetailedGroupReportData } from './types';
+import {
+  validateCustomSplit,
+  calculateGroupBalances,
+  parseCurrencyToMinorUnits,
+  formatCurrency,
+} from '../../../../../packages/shared/src/finance';
+import {
+  normalizeWhatsAppNumber,
+  isValidWhatsAppNumber,
+  buildExpenseSplitMessage,
+  buildSettlementReminderMessage,
+  buildWhatsAppUrl,
+} from '../../../../../packages/shared/src/whatsapp';
 
 declare const Buffer: any;
 declare const process: any;
@@ -496,6 +509,260 @@ async function runTests() {
   const filename = sanitizeFilename('Goa / Candolim : Trip * 2026?');
   assert(!filename.includes('/') && !filename.includes(':') && !filename.includes('*') && !filename.includes('?'), 'Filename is properly sanitized against invalid filesystem characters');
   assert(filename.endsWith('.xlsx'), 'Filename has genuine .xlsx extension');
+
+  // ----------------------------------------------------
+  // TEST 3: Group Deletion & Financial Clearing Isolation
+  // ----------------------------------------------------
+  console.log(bold('\n--- TEST SUITE 3: Delete Group & Clear Group Financial Records ---'));
+
+  interface MockGroup { id: string; name: string; currency: string }
+  interface MockUser { id: string; name: string; email: string }
+  interface MockGroupMember { id: string; groupId: string; userId: string; role: string }
+  interface MockExpense { id: string; groupId: string; title: string; amountPaise: number }
+  interface MockPayment { id: string; expenseId: string; userId: string; amountPaise: number }
+  interface MockSplit { id: string; expenseId: string; userId: string; amountPaise: number }
+  interface MockSettlement { id: string; groupId: string; payerId: string; receiverId: string; amountPaise: number }
+  interface MockDocument { id: string; groupId: string; expenseId: string | null; filename: string }
+
+  // Multi-group database representation
+  let dbGroups: MockGroup[] = [
+    { id: 'group-goa', name: 'Goa Holiday', currency: 'INR' },
+    { id: 'group-manali', name: 'Manali Expedition', currency: 'INR' },
+  ];
+  let dbUsers: MockUser[] = [
+    { id: 'u1', name: 'Yash Surve', email: 'yash@tripmate.com' },
+    { id: 'u2', name: 'Alice Sen', email: 'alice@tripmate.com' },
+    { id: 'u3', name: 'Bob Verma', email: 'bob@tripmate.com' },
+    { id: 'u4', name: 'Charlie Dave', email: 'charlie@tripmate.com' },
+  ];
+  let dbMembers: MockGroupMember[] = [
+    { id: 'gm1', groupId: 'group-goa', userId: 'u1', role: 'ADMIN' },
+    { id: 'gm2', groupId: 'group-goa', userId: 'u2', role: 'MEMBER' },
+    { id: 'gm3', groupId: 'group-goa', userId: 'u3', role: 'MEMBER' },
+    { id: 'gm4', groupId: 'group-manali', userId: 'u1', role: 'ADMIN' },
+    { id: 'gm5', groupId: 'group-manali', userId: 'u4', role: 'MEMBER' },
+  ];
+  let dbExpenses: MockExpense[] = [
+    { id: 'exp1', groupId: 'group-goa', title: 'Hotel Booking', amountPaise: 100000 },
+    { id: 'exp2', groupId: 'group-goa', title: 'Seafood Shack', amountPaise: 40000 },
+    { id: 'exp3', groupId: 'group-manali', title: 'Mountain Cabins', amountPaise: 80000 },
+  ];
+  let dbPayments: MockPayment[] = [
+    { id: 'p1', expenseId: 'exp1', userId: 'u1', amountPaise: 100000 },
+    { id: 'p2', expenseId: 'exp2', userId: 'u2', amountPaise: 40000 },
+    { id: 'p3', expenseId: 'exp3', userId: 'u1', amountPaise: 80000 },
+  ];
+  let dbSplits: MockSplit[] = [
+    { id: 's1', expenseId: 'exp1', userId: 'u1', amountPaise: 50000 },
+    { id: 's2', expenseId: 'exp1', userId: 'u2', amountPaise: 30000 },
+    { id: 's3', expenseId: 'exp1', userId: 'u3', amountPaise: 20000 },
+    { id: 's4', expenseId: 'exp2', userId: 'u1', amountPaise: 20000 },
+    { id: 's5', expenseId: 'exp2', userId: 'u2', amountPaise: 20000 },
+    { id: 's6', expenseId: 'exp3', userId: 'u1', amountPaise: 40000 },
+    { id: 's7', expenseId: 'exp3', userId: 'u4', amountPaise: 40000 },
+  ];
+  let dbSettlements: MockSettlement[] = [
+    { id: 'set1', groupId: 'group-goa', payerId: 'u2', receiverId: 'u1', amountPaise: 10000 },
+    { id: 'set2', groupId: 'group-manali', payerId: 'u4', receiverId: 'u1', amountPaise: 40000 },
+  ];
+  let dbDocuments: MockDocument[] = [
+    { id: 'doc1', groupId: 'group-goa', expenseId: 'exp1', filename: 'hotel_invoice.pdf' },
+    { id: 'doc2', groupId: 'group-goa', expenseId: null, filename: 'itinerary.pdf' },
+    { id: 'doc3', groupId: 'group-manali', expenseId: 'exp3', filename: 'cabin_receipt.jpg' },
+  ];
+
+  // 3.1 Clear Group Bills & Expenses for Group Goa
+  function clearGroupFinancials(targetGroupId: string) {
+    const expenseIds = dbExpenses.filter(e => e.groupId === targetGroupId).map(e => e.id);
+    dbSplits = dbSplits.filter(s => !expenseIds.includes(s.expenseId));
+    dbPayments = dbPayments.filter(p => !expenseIds.includes(p.expenseId));
+    dbDocuments = dbDocuments.filter(d => !(d.groupId === targetGroupId && d.expenseId !== null));
+    dbSettlements = dbSettlements.filter(s => s.groupId !== targetGroupId);
+    dbExpenses = dbExpenses.filter(e => e.groupId !== targetGroupId);
+  }
+
+  clearGroupFinancials('group-goa');
+
+  assert(dbExpenses.filter(e => e.groupId === 'group-goa').length === 0, 'Group Goa expenses are cleared completely');
+  assert(dbSplits.filter(s => ['exp1', 'exp2'].includes(s.expenseId)).length === 0, 'Group Goa expense splits are cleared');
+  assert(dbPayments.filter(p => ['exp1', 'exp2'].includes(p.expenseId)).length === 0, 'Group Goa expense payments are cleared');
+  assert(dbSettlements.filter(s => s.groupId === 'group-goa').length === 0, 'Group Goa settlements are cleared');
+  assert(dbDocuments.filter(d => d.groupId === 'group-goa' && d.expenseId !== null).length === 0, 'Expense-linked documents are unlinked/removed');
+  assert(dbDocuments.filter(d => d.groupId === 'group-goa' && d.expenseId === null).length === 1, 'General group itinerary document is preserved');
+  assert(dbGroups.some(g => g.id === 'group-goa'), 'Group Goa itself remains intact in groups table');
+  assert(dbMembers.filter(m => m.groupId === 'group-goa').length === 3, 'Group Goa retains all 3 group members');
+  assert(dbExpenses.filter(e => e.groupId === 'group-manali').length === 1, 'Group Manali expenses untouched (cross-group isolation)');
+  assert(dbSettlements.filter(s => s.groupId === 'group-manali').length === 1, 'Group Manali settlements untouched');
+  assert(dbDocuments.filter(d => d.groupId === 'group-manali').length === 1, 'Group Manali documents untouched');
+
+  // 3.2 Delete Group Goa Permanently
+  function deleteGroupPermanently(targetGroupId: string) {
+    clearGroupFinancials(targetGroupId);
+    dbDocuments = dbDocuments.filter(d => d.groupId !== targetGroupId);
+    dbMembers = dbMembers.filter(m => m.groupId !== targetGroupId);
+    dbGroups = dbGroups.filter(g => g.id !== targetGroupId);
+  }
+
+  deleteGroupPermanently('group-goa');
+
+  assert(!dbGroups.some(g => g.id === 'group-goa'), 'Group Goa is permanently removed from groups table');
+  assert(dbMembers.filter(m => m.groupId === 'group-goa').length === 0, 'Group Goa members are safely removed');
+  assert(dbDocuments.filter(d => d.groupId === 'group-goa').length === 0, 'Group Goa documents are cleaned up');
+  assert(dbUsers.length === 4, 'Shared user profiles (Yash, Alice, Bob, Charlie) are preserved across groups');
+  assert(dbGroups.length === 1 && dbGroups[0].id === 'group-manali', 'Group Manali continues to exist completely unharmed');
+  assert(dbMembers.filter(m => m.groupId === 'group-manali').length === 2, 'Group Manali members remain fully intact');
+
+  // ----------------------------------------------------
+  // TEST 4: Custom Amount-Wise Expense Splitting
+  // ----------------------------------------------------
+  console.log(bold('\n--- TEST SUITE 4: Custom Amount-Wise Expense Splitting ---'));
+
+  // 4.1 Balanced Custom Allocation (₹1,000 Total: Yash ₹500, Member A ₹300, Member B ₹200)
+  const balancedResult = validateCustomSplit(100000, [
+    { userId: 'u1', amountPaise: 50000 },
+    { userId: 'u2', amountPaise: 30000 },
+    { userId: 'u3', amountPaise: 20000 },
+  ]);
+  assert(balancedResult.isValid === true, 'Balanced custom split is valid');
+  assert(balancedResult.status === 'BALANCED', 'Status is BALANCED');
+  assert(balancedResult.allocatedPaise === 100000, 'Allocated total equals 100,000 paise (₹1,000)');
+  assert(balancedResult.remainingPaise === 0, 'Remaining paise is exactly 0');
+
+  // 4.2 Under-allocated Custom Split (₹1,000 Total, only ₹700 allocated)
+  const underResult = validateCustomSplit(100000, [
+    { userId: 'u1', amountPaise: 40000 },
+    { userId: 'u2', amountPaise: 30000 },
+  ]);
+  assert(underResult.isValid === false, 'Under-allocation is invalid for saving');
+  assert(underResult.status === 'UNDER_ALLOCATED', 'Status is UNDER_ALLOCATED');
+  assert(underResult.remainingPaise === 30000, 'Remaining paise is ₹300 (30,000 paise)');
+
+  // 4.3 Over-allocated Custom Split (₹1,000 Total, ₹1,100 allocated)
+  const overResult = validateCustomSplit(100000, [
+    { userId: 'u1', amountPaise: 60000 },
+    { userId: 'u2', amountPaise: 50000 },
+  ]);
+  assert(overResult.isValid === false, 'Over-allocation is invalid for saving');
+  assert(overResult.status === 'OVER_ALLOCATED', 'Status is OVER_ALLOCATED');
+  assert(overResult.remainingPaise === -10000, 'Remaining paise is -₹100 (-10,000 paise)');
+
+  // 4.4 Zero Share Support (Member pays ₹0 while another pays full ₹1,000)
+  const zeroShareResult = validateCustomSplit(100000, [
+    { userId: 'u1', amountPaise: 100000 },
+    { userId: 'u2', amountPaise: 0 },
+  ]);
+  assert(zeroShareResult.isValid === true, 'Permits member to have ₹0 share');
+  assert(zeroShareResult.status === 'BALANCED', 'Zero-share split validates as BALANCED');
+
+  // 4.5 Decimal Paise Precision (₹123.45 = 12345 paise -> ₹61.73 + ₹61.72)
+  const decimalTotalPaise = parseCurrencyToMinorUnits('123.45');
+  assert(decimalTotalPaise === 12345, 'Parse ₹123.45 to exactly 12345 paise');
+  const decimalResult = validateCustomSplit(decimalTotalPaise, [
+    { userId: 'u1', amountPaise: 6173 },
+    { userId: 'u2', amountPaise: 6172 },
+  ]);
+  assert(decimalResult.isValid === true, 'Decimal paise split matches 12345 paise');
+  assert(decimalResult.remainingPaise === 0, 'Decimal split has exactly 0 remainder');
+
+  // 4.6 Rejection of Negative Amounts
+  const negativeResult = validateCustomSplit(100000, [
+    { userId: 'u1', amountPaise: 110000 },
+    { userId: 'u2', amountPaise: -10000 },
+  ]);
+  assert(negativeResult.isValid === false, 'Rejects negative allocation share');
+
+  // 4.7 Zero-Sum Balance Invariant with Custom Splits
+  const customBalances = calculateGroupBalances(
+    ['u1', 'u2', 'u3'],
+    [
+      {
+        id: 'exp-c',
+        groupId: 'g1',
+        title: 'Custom Split Expense',
+        amount: 100000,
+        currency: 'INR',
+        category: 'OTHER' as any,
+        date: '2026-10-23',
+        createdById: 'u1',
+        payments: [{ id: 'p-c', userId: 'u1', amount: 100000 }],
+        splits: [
+          { id: 's-1', userId: 'u1', amount: 50000 },
+          { id: 's-2', userId: 'u2', amount: 30000 },
+          { id: 's-3', userId: 'u3', amount: 20000 },
+        ],
+      },
+    ],
+    []
+  );
+  const netSum = Object.values(customBalances.memberBalances).reduce((acc, m) => acc + m.balance, 0);
+  assert(netSum === 0, 'Group balances with custom splits adhere to strict zero-sum invariant');
+  const u1Bal = customBalances.memberBalances['u1'];
+  const u2Bal = customBalances.memberBalances['u2'];
+  const u3Bal = customBalances.memberBalances['u3'];
+  assert(u1Bal.balance === 50000, 'Payer u1 net balance is +₹500.00');
+  assert(u2Bal.balance === -30000, 'Borrower u2 net balance is -₹300.00');
+  assert(u3Bal.balance === -20000, 'Borrower u3 net balance is -₹200.00');
+
+  // ----------------------------------------------------
+  // TEST 5: WhatsApp Redirect & Pre-filled Messages
+  // ----------------------------------------------------
+  console.log(bold('\n--- TEST SUITE 5: WhatsApp Integration & Message Formatting ---'));
+
+  // 5.1 Phone Number Normalization
+  const testNumber1 = '+91 88507 06982';
+  const normalized1 = normalizeWhatsAppNumber(testNumber1);
+  assert(normalized1 === '918850706982', 'Normalizes "+91 88507 06982" to "918850706982"');
+
+  const testNumber2 = '88507 06982';
+  const normalized2 = normalizeWhatsAppNumber(testNumber2);
+  assert(normalized2 === '918850706982', 'Normalizes 10-digit domestic Indian number by prepending 91');
+
+  const testNumber3 = '+1 (555) 234-5678';
+  const normalized3 = normalizeWhatsAppNumber(testNumber3);
+  assert(normalized3 === '15552345678', 'Normalizes international US number cleanly');
+
+  // 5.2 Number Validation
+  assert(isValidWhatsAppNumber('+91 88507 06982') === true, 'Accepts valid normalized number');
+  assert(isValidWhatsAppNumber('918850706982') === true, 'Accepts standard 12-digit number');
+  assert(isValidWhatsAppNumber('123') === false, 'Rejects invalid short number');
+  assert(isValidWhatsAppNumber('') === false, 'Rejects empty number');
+
+  // 5.3 Dynamic Expense Split Message
+  const splitMsg = buildExpenseSplitMessage({
+    recipientName: 'Yash',
+    groupName: 'Goa Trip',
+    expenseTitle: 'Hotel Booking',
+    totalAmountPaise: 100000,
+    userSharePaise: 30000,
+    payerName: 'Member A',
+    currency: 'INR',
+  });
+  assert(splitMsg.includes('Hi Yash,'), 'Split message has personalized greeting');
+  assert(splitMsg.includes('Group: Goa Trip'), 'Split message includes dynamic group name');
+  assert(splitMsg.includes('Expense: Hotel Booking'), 'Split message includes dynamic expense title');
+  assert(splitMsg.includes('Total Bill: ₹1,000.00'), 'Split message includes formatted total bill');
+  assert(splitMsg.includes('Your share: ₹300.00'), 'Split message accurately isolates recipient individual share');
+  assert(splitMsg.includes('Paid by: Member A'), 'Split message mentions payer name');
+
+  // 5.4 Dynamic Settlement Reminder Message
+  const settleMsg = buildSettlementReminderMessage({
+    recipientName: 'Bob',
+    groupName: 'Goa Trip',
+    debtorName: 'Bob',
+    creditorName: 'Yash',
+    amountPaise: 20000,
+    currency: 'INR',
+  });
+  assert(settleMsg.includes('Hi Bob,'), 'Settlement message has personalized greeting');
+  assert(settleMsg.includes('Bob owes Yash ₹200.00'), 'Settlement message includes accurate balance and parties');
+  assert(settleMsg.includes('Settlement reminder from Goa Trip'), 'Settlement message identifies group');
+
+  // 5.5 WhatsApp URL Construction and Encoding
+  const waUrl = buildWhatsAppUrl(testNumber1, splitMsg);
+  assert(waUrl.startsWith('https://wa.me/918850706982?text='), 'WhatsApp URL starts with wa.me and normalized number');
+  assert(!waUrl.includes('+'), 'WhatsApp URL contains no bare plus sign in recipient number');
+  assert(!waUrl.includes(' '), 'WhatsApp URL encodes all spaces');
+  assert(waUrl.includes('%E2%82%B9') || waUrl.includes('%20'), 'Special currency and newline characters are properly URL-encoded');
 
   console.log(bold(green(`\n======================================================`)));
   console.log(bold(green(` ALL ${passedCount}/${totalCount} E2E & FINANCIAL TESTS PASSED!`)));

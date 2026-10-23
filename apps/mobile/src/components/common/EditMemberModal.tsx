@@ -17,8 +17,10 @@ import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../../theme/ThemeContext';
 import { Radius, Shadows, Spacing, Typography } from '../../theme/tokens';
 import { formatCurrency } from '../../utils/finance';
+import { isValidWhatsAppNumber, openWhatsAppChat } from '../../utils/whatsapp';
 import { Button } from '../ui/Button';
 import { ReportMemberSummary } from '../../services/api';
+
 
 const AVATAR_COLORS = [
   '#4F46E5', // Indigo
@@ -101,13 +103,41 @@ export const EditMemberModal: React.FC<EditMemberModalProps> = ({
     });
   };
 
-  const handleWhatsApp = () => {
-    if (!phone.trim()) return;
-    const cleanPhone = phone.replace(/[^0-9]/g, '');
-    Linking.openURL(`https://wa.me/${cleanPhone}`).catch(() => {
-      Alert.alert('Unable to Open WhatsApp', 'Please ensure WhatsApp is installed.');
-    });
+  const handleWhatsApp = async () => {
+    if (!phone.trim()) {
+      Alert.alert('Phone Number Required', 'Please enter a phone number in the Phone field to chat on WhatsApp.');
+      return;
+    }
+
+    if (!isValidWhatsAppNumber(phone)) {
+      Alert.alert('Invalid Phone Number', 'Please enter a valid phone number with country code (e.g. +91 88507 06982).');
+      return;
+    }
+
+    const greeting = name.trim() ? `Hi ${name.trim()},` : 'Hi,';
+    const balanceText =
+      member.netBalancePaise < 0
+        ? `You currently owe ${formatCurrency(Math.abs(member.netBalancePaise), currency)} in TripMate.`
+        : member.netBalancePaise > 0
+        ? `You are owed ${formatCurrency(member.netBalancePaise, currency)} in TripMate.`
+        : 'Your account is settled up (₹0.00) in TripMate.';
+
+    const message = `${greeting}
+
+Here is your financial balance summary:
+${balanceText}
+
+Total Paid: ${formatCurrency(member.totalPaidPaise, currency)}
+Total Consumed Share: ${formatCurrency(member.totalSharePaise, currency)}
+
+Thank you!`;
+
+    const res = await openWhatsAppChat(phone, message);
+    if (!res.success) {
+      Alert.alert('Unable to Open WhatsApp', res.error || 'Please ensure WhatsApp is installed.');
+    }
   };
+
 
   const handleCopySummary = () => {
     try {

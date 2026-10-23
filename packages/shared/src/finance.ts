@@ -169,6 +169,96 @@ export function validateExactSplit(
   };
 }
 
+export interface CustomSplitShare {
+  userId: string;
+  amountPaise: number;
+}
+
+export interface CustomSplitValidationResult {
+  isValid: boolean;
+  totalPaise: number;
+  allocatedPaise: number;
+  remainingPaise: number;
+  status: 'BALANCED' | 'UNDER_ALLOCATED' | 'OVER_ALLOCATED';
+  error?: string;
+}
+
+/**
+ * Validates custom amount-wise allocations.
+ * Checks for negative amounts, ensures integer paise precision,
+ * and dynamically calculates allocated total, remaining amount, and status.
+ */
+export function validateCustomSplit(
+  totalPaise: number,
+  shares: CustomSplitShare[]
+): CustomSplitValidationResult {
+  if (totalPaise < 0) {
+    return {
+      isValid: false,
+      totalPaise,
+      allocatedPaise: 0,
+      remainingPaise: totalPaise,
+      status: 'OVER_ALLOCATED',
+      error: 'Total amount cannot be negative',
+    };
+  }
+
+  for (const s of shares) {
+    if (s.amountPaise < 0) {
+      return {
+        isValid: false,
+        totalPaise,
+        allocatedPaise: 0,
+        remainingPaise: totalPaise,
+        status: 'UNDER_ALLOCATED',
+        error: 'Individual split amounts cannot be negative',
+      };
+    }
+    if (!Number.isInteger(s.amountPaise)) {
+      return {
+        isValid: false,
+        totalPaise,
+        allocatedPaise: 0,
+        remainingPaise: totalPaise,
+        status: 'UNDER_ALLOCATED',
+        error: 'Split amounts must be integer paise',
+      };
+    }
+  }
+
+  const allocatedPaise = shares.reduce((acc, s) => acc + s.amountPaise, 0);
+  const remainingPaise = totalPaise - allocatedPaise;
+
+  if (remainingPaise === 0) {
+    return {
+      isValid: true,
+      totalPaise,
+      allocatedPaise,
+      remainingPaise: 0,
+      status: 'BALANCED',
+    };
+  } else if (remainingPaise > 0) {
+    return {
+      isValid: false,
+      totalPaise,
+      allocatedPaise,
+      remainingPaise,
+      status: 'UNDER_ALLOCATED',
+      error: `Remaining amount: ${formatCurrency(remainingPaise, 'INR')} under-allocated`,
+    };
+  } else {
+    return {
+      isValid: false,
+      totalPaise,
+      allocatedPaise,
+      remainingPaise,
+      status: 'OVER_ALLOCATED',
+      error: `Allocated amount exceeds total by ${formatCurrency(Math.abs(remainingPaise), 'INR')}`,
+    };
+  }
+}
+
+
 /**
  * Validates that total payments match the expense total.
  */
