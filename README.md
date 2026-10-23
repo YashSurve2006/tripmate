@@ -13,7 +13,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/YashSurve2006/tripmate?style=for-the-badge&color=7C3AED&labelColor=1E1B4B&logo=github)](https://github.com/YashSurve2006/tripmate/releases/tag/v1.0.0)
 [![Download APK](https://img.shields.io/badge/Download_APK-v1.0.0-10B981?style=for-the-badge&logo=android&logoColor=white&labelColor=064E3B)](https://github.com/YashSurve2006/tripmate/releases/download/v1.0.0/TripMate-release.apk)
 [![Tests](https://img.shields.io/badge/Tests-27%2F27_Passing-0D9488?style=for-the-badge&logo=jest&logoColor=white&labelColor=042F2E)](.)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge&labelColor=1E1B4B)](./apps/mobile/LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge&labelColor=1E1B4B)](./LICENSE)
 
 <br/>
 
@@ -36,6 +36,7 @@ The production Android APK is built, tested, and available directly from GitHub 
 |:---|:---|
 | 📦 **Release Tag** | [**`v1.0.0` Production Release**](https://github.com/YashSurve2006/tripmate/releases/tag/v1.0.0) |
 | 🚀 **Direct Download** | [**`TripMate-release.apk` (99.3 MB)**](https://github.com/YashSurve2006/tripmate/releases/download/v1.0.0/TripMate-release.apk) |
+| 🔐 **SHA-256 Checksum** | `4A6B709D9017AE23B468F558803FA899A13C46198530AD998E62FF294276DC83` |
 | 📱 **Target OS** | Android 8.0+ (API 26–36) • `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64` |
 | 🔒 **Privacy Guarantee** | 100% Offline • Zero tracking • All data stays inside local SQLite |
 
@@ -258,41 +259,47 @@ flowchart TD
 ### Commands
 
 ```bash
-# 1. Install dependencies
+# 1. Install monorepo dependencies
 npm install
 
-# 2. Run TypeScript checks
-npm run typecheck --prefix apps/mobile
+# 2. Run TypeScript checks across all workspaces (mobile, shared, backend)
+npm run typecheck
 
-# 3. Run all tests (27/27 unit + integration tests)
+# 3. Run all test suites (67/67 unit, persistence, and E2E tests)
 npm test
 
-# 4. Start local development server
+# 4. Start local development Metro bundler
 npm run start:mobile
 
-# 5. Build standalone release APK
+# 5. Build standalone release APK (portable across Windows, Linux, macOS)
 npm run build:apk
 # → Output: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
 ```
 
 ---
 
+## 🔧 Troubleshooting
+
+| Issue | Cause & Resolution |
+|:---|:---|
+| `Unsupported class file major version` | Gradle requires **JDK 21**. Verify `java -version` returns `openjdk version "21.x.x"`. Set `JAVA_HOME` to your JDK 21 installation path. |
+| `SDK location not found` | Set `ANDROID_HOME` or `ANDROID_SDK_ROOT` environment variable pointing to your Android SDK directory (e.g. `%LOCALAPPDATA%\Android\Sdk` on Windows or `~/Library/Android/sdk` on macOS). |
+| `EADDRINUSE: address already in use 8081` | Metro bundler port conflict. Terminate existing Node/Metro processes or launch with `npx expo start --port 8082`. |
+
+---
+
 ## 💾 Data Privacy & Backup
 
-- **Zero Cloud Dependence**: No external accounts, trackers, or telemetry.
-- **On-Device Storage**: Data stays on your phone within the sandboxed application directory.
+- **Zero Cloud Dependence**: No external accounts, trackers, or background telemetry.
+- **On-Device Storage**: Data stays on your phone within the sandboxed application directory (`expo-sqlite`).
 - **Easy Backup**: Export any group as a complete **10-Sheet Excel (.xlsx)** workbook anytime and share it via WhatsApp, Google Drive, or email.
 
 ---
 
-## 🤝 Contributing & License
+## 📜 Documentation & Policies
 
-Contributions, feedback, and issue reports are welcome!
+- 📝 [**Changelog (CHANGELOG.md)**](./CHANGELOG.md) — Detailed version release notes.
+- 🤝 [**Contributing Guide (CONTRIBUTING.md)**](./CONTRIBUTING.md) — Guidelines for code, tests, and pull requests.
+- 🔒 [**Security Policy (SECURITY.md)**](./SECURITY.md) — Vulnerability reporting and data protection policy.
+- 📄 [**License (LICENSE)**](./LICENSE) — TripMate is open source under the **MIT License**.
 
-1. Fork the repository: [https://github.com/YashSurve2006/tripmate](https://github.com/YashSurve2006/tripmate)
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Run tests (`npm test`) and typecheck (`cd apps/mobile && npx tsc --noEmit`)
-4. Commit your changes (`git commit -m "feat: add amazing feature"`)
-5. Push to the branch and open a Pull Request.
-
-TripMate is open source under the [MIT License](./apps/mobile/LICENSE).

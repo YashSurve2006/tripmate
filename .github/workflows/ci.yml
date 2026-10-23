@@ -1,0 +1,39 @@
+name: TripMate CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck & Test Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Monorepo Dependencies
+        run: |
+          npm install
+          npm --prefix packages/shared install
+          npm --prefix apps/backend install
+          npm --prefix apps/mobile install
+
+      - name: Run TypeScript Typecheck
+        run: npm run typecheck
+
+      - name: Run Unit, Integration & E2E Tests
+        run: npm test

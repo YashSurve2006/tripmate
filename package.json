@@ -6,13 +6,18 @@
   "scripts": {
     "start:mobile": "npm --prefix apps/mobile start",
     "android": "npm --prefix apps/mobile run android",
-    "build:apk": "powershell -Command \"$env:JAVA_HOME = 'C:\\Program Files\\Java\\jdk-21'; cd apps/mobile/android; .\\gradlew.bat assembleRelease\"",
-    "build:apk:debug": "powershell -Command \"$env:JAVA_HOME = 'C:\\Program Files\\Java\\jdk-21'; cd apps/mobile/android; .\\gradlew.bat assembleDebug\"",
+    "build:apk": "node scripts/build-apk.js release",
+    "build:apk:debug": "node scripts/build-apk.js debug",
     "start:backend": "npm --prefix apps/backend run dev",
     "build:shared": "npm --prefix packages/shared run build",
+    "typecheck:shared": "npm --prefix packages/shared run build",
+    "typecheck:backend": "npm --prefix apps/backend run build",
+    "typecheck:mobile": "npm --prefix apps/mobile run typecheck",
+    "typecheck": "npm run typecheck:shared && npm run typecheck:backend && npm run typecheck:mobile",
     "test:shared": "npm --prefix packages/shared test",
     "test:backend": "npm --prefix apps/backend test",
-    "test": "npm run test:shared && npm run test:backend"
+    "test:e2e": "npx tsx apps/mobile/src/services/export/test-features-e2e.ts",
+    "test": "npm run test:shared && npm run test:backend && npm run test:e2e"
   },
   "keywords": [
     "expense-tracker",
@@ -23,6 +28,6 @@
     "offline-first",
     "sqlite"
   ],
-  "author": "TripMate Team",
-  "license": "UNLICENSED"
+  "author": "Yash Surve <yashsurve2019@gmail.com>",
+  "license": "MIT"
 }
