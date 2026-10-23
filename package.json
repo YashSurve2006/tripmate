@@ -1,0 +1,28 @@
+{
+  "name": "tripmate",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TripMate - Production-ready Android-first group expense and trip management application",
+  "scripts": {
+    "start:mobile": "npm --prefix apps/mobile start",
+    "android": "npm --prefix apps/mobile run android",
+    "build:apk": "powershell -Command \"$env:JAVA_HOME = 'C:\\Program Files\\Java\\jdk-21'; cd apps/mobile/android; .\\gradlew.bat assembleRelease\"",
+    "build:apk:debug": "powershell -Command \"$env:JAVA_HOME = 'C:\\Program Files\\Java\\jdk-21'; cd apps/mobile/android; .\\gradlew.bat assembleDebug\"",
+    "start:backend": "npm --prefix apps/backend run dev",
+    "build:shared": "npm --prefix packages/shared run build",
+    "test:shared": "npm --prefix packages/shared test",
+    "test:backend": "npm --prefix apps/backend test",
+    "test": "npm run test:shared && npm run test:backend"
+  },
+  "keywords": [
+    "expense-tracker",
+    "splitwise-alternative",
+    "trips",
+    "react-native",
+    "expo",
+    "offline-first",
+    "sqlite"
+  ],
+  "author": "TripMate Team",
+  "license": "UNLICENSED"
+}
