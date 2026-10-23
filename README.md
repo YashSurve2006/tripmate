@@ -12,7 +12,6 @@
 
 [![GitHub Release](https://img.shields.io/github/v/release/YashSurve2006/tripmate?style=for-the-badge&color=7C3AED&labelColor=1E1B4B&logo=github)](https://github.com/YashSurve2006/tripmate/releases/tag/v1.0.0)
 [![Download APK](https://img.shields.io/badge/Download_APK-v1.0.0-10B981?style=for-the-badge&logo=android&logoColor=white&labelColor=064E3B)](https://github.com/YashSurve2006/tripmate/releases/download/v1.0.0/TripMate-release.apk)
-[![CI Status](https://img.shields.io/github/actions/workflow/status/YashSurve2006/tripmate/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI&color=10B981&labelColor=1E1B4B)](https://github.com/YashSurve2006/tripmate/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/Tests-67%2F67_Passing-0D9488?style=for-the-badge&logo=jest&logoColor=white&labelColor=042F2E)](.)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge&labelColor=1E1B4B)](./LICENSE)
 
