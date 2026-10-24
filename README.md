@@ -136,17 +136,11 @@ TripMate stores all monetary values in integer minor units (**paise**), eliminat
 
 ### Exact Paise Split Flow
 
-```mermaid
-flowchart LR
-    A["Expense: ₹100.00"] --> B["Integer: 10,000 Paise"]
-    B --> C["Split Among 3 Members"]
-    C --> D["Member 1: 3,334 Paise"]
-    C --> E["Member 2: 3,333 Paise"]
-    C --> F["Member 3: 3,333 Paise"]
-    D --> G["Sum = 10,000 Paise<br/>Zero Rounding Drift"]
-    E --> G
-    F --> G
-```
+<div align="center">
+
+<img src="./docs/assets/exact-paise-split.svg" alt="Exact paise split: ₹100 becomes 10,000 paise and is allocated as 3,334, 3,333, and 3,333 paise, totaling exactly 10,000 paise." width="100%" />
+
+</div>
 
 ### Settle-Up Debt Simplification
 
@@ -192,13 +186,11 @@ Send dynamic expense splits and settlement debt reminders straight into WhatsApp
 
 TripMate generates native OpenXML spreadsheets via SheetJS (`xlsx`) without cloud servers:
 
-```mermaid
-flowchart LR
-    A["Local SQLite Ledger"] --> B["ExcelWorkbookBuilder"]
-    B --> C["10 Dedicated Worksheets"]
-    C --> D["Base64 Serializer"]
-    D --> E["Android Native Share Sheet"]
-```
+<div align="center">
+
+<img src="./docs/assets/excel-export-flow.svg" alt="TripMate Excel export pipeline from the local SQLite ledger through the workbook builder and ten worksheets to the Android native share sheet." width="100%" />
+
+</div>
 
 | # | Sheet | Content |
 |:---:|:---|:---|
@@ -217,31 +209,11 @@ flowchart LR
 
 ## 🏗️ System Architecture
 
-```mermaid
-flowchart TD
-    subgraph MobileApp ["apps/mobile (React Native / Expo SDK 58)"]
-        UI["UI Screens & Components<br/>(Tabs, Group Hub, Modals)"]
-        Theme["Theme Engine (Light / Dark / OLED)"]
-        Excel["10-Sheet Excel Generator"]
-        SQLite["expo-sqlite (Local Database & Migrations)"]
-    end
+<div align="center">
 
-    subgraph SharedCore ["packages/shared (TypeScript Core)"]
-        PaiseMath["Paise Minor-Unit Math"]
-        DebtSolver["Zero-Sum Debt Simplifier"]
-    end
+<img src="./docs/assets/system-architecture.svg" alt="TripMate system architecture showing the Expo React Native mobile app, local SQLite, Excel export, shared paise and debt calculation core, and optional Prisma/PostgreSQL backend." width="100%" />
 
-    subgraph BackendOpt ["apps/backend (Optional Cloud API)"]
-        Prisma["Prisma ORM & PostgreSQL"]
-    end
-
-    UI --> Theme
-    UI --> Excel
-    UI --> SQLite
-    UI --> PaiseMath
-    DebtSolver --> PaiseMath
-    UI -.-> BackendOpt
-```
+</div>
 
 ---
 
