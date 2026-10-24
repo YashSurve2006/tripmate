@@ -8,6 +8,7 @@
     "android": "npm --prefix apps/mobile run android",
     "build:apk": "node scripts/build-apk.js release",
     "build:apk:debug": "node scripts/build-apk.js debug",
+    "publish:release": "node scripts/publish-github-release.js",
     "generate:icons": "node scripts/generate-app-icons.js",
     "start:backend": "npm --prefix apps/backend run dev",
     "build:shared": "npm --prefix packages/shared run build",
