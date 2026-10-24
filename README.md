@@ -12,7 +12,7 @@
 
 [![GitHub Release](https://img.shields.io/github/v/release/YashSurve2006/tripmate?style=for-the-badge&color=7C3AED&labelColor=1E1B4B&logo=github)](https://github.com/YashSurve2006/tripmate/releases/tag/v1.0.0)
 [![Download APK](https://img.shields.io/badge/Download_APK-v1.0.0-10B981?style=for-the-badge&logo=android&logoColor=white&labelColor=064E3B)](https://github.com/YashSurve2006/tripmate/releases/download/v1.0.0/TripMate-release.apk)
-[![Tests](https://img.shields.io/badge/Tests-141%2F141_Passing-0D9488?style=for-the-badge&logo=jest&logoColor=white&labelColor=042F2E)](.)
+[![Tests](https://img.shields.io/badge/Tests-197_Total-0D9488?style=for-the-badge&logo=jest&logoColor=white&labelColor=042F2E)](.)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge&labelColor=1E1B4B)](./LICENSE)
 
 <br/>
@@ -293,7 +293,7 @@ npm install
 # 2. Run TypeScript checks across all workspaces (mobile, shared, backend)
 npm run typecheck
 
-# 3. Run all test suites (141/141 unit, persistence, and E2E tests)
+# 3. Run all test suites (the repository currently contains approximately 197 tests; verify the passing count by running the command)
 npm test
 
 # 4. Start local development Metro bundler
