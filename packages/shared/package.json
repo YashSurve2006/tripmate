@@ -1,6 +1,6 @@
 {
   "name": "@tripmate/shared",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Shared models, financial calculation logic, and validation types for TripMate",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

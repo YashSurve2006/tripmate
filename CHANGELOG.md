@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] - 2026-10-24
+
+### Added
+- **Custom Amount-Wise Expense Splitting**: Full support for custom split allocations across members with real-time paise balance validation, visual remaining indicator badges, percentage / shares breakdown, and zero-share member exclusion.
+- **Dynamic Group Member Management**: Add members on-the-fly directly by name without invite codes or phone barriers; edit roles, nicknames, and contact info; and safely archive historical transaction participants without corrupting balance audits.
+- **Safe Group Deletion & Record Cleanup**: Cascading deletion dialog allowing users to wipe group expenses, splits, and attached documents while strictly safeguarding global user profiles and other groups.
+- **WhatsApp Bill Splitting & Settlement Reminders**: One-tap WhatsApp breakdown sharing (`wa.me/` deep linking) with dynamic emoji formatting, amount calculations, and international phone number normalization (E.164 and Indian 10-digit formats).
+- **Official Brand App Launcher Icons**: High-resolution branded Android adaptive launcher icons (foreground + background layers) and iOS icons configured from official brand assets.
+- **Production Android Build v1.1.0 (versionCode 2)**: Recompiled standalone universal release APK with brand launcher icon, updated manifest, and offline performance optimizations.
+- **Comprehensive 97-Test Suite**: 40 shared unit tests, 4 backend financial reconciliation tests, and 53 end-to-end integration tests validating financial invariants and zero-sum balances.
+
 ## [1.0.0] - 2026-10-23
 
 ### Added

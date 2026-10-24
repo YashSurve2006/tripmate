@@ -1,6 +1,6 @@
 {
   "name": "tripmate-backend",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Production-oriented REST API for TripMate group expense and trip management",
   "main": "dist/server.js",
   "scripts": {
