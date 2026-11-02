@@ -1001,7 +1001,11 @@ export default function GroupDetailsScreen() {
                         </View>
                         <View style={{ flex: 1, marginLeft: Spacing.sm }}>
                           <Text style={[styles.historyTitle, { color: colors.text }]}>
-                            {s.payer_name || 'Member'} paid {s.payee_name || 'Member'}
+                            {isPending
+                            ? `${s.payer_name || 'Member'} requested payment to ${s.payee_name || 'Member'}`
+                            : isRejected
+                            ? `Payment from ${s.payer_name || 'Member'} to ${s.payee_name || 'Member'}`
+                            : `${s.payer_name || 'Member'} paid ${s.payee_name || 'Member'}`}
                           </Text>
                           <Text style={[styles.historySub, { color: colors.textMuted }]}>
                             {statusLabel} · {s.created_at ? new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Just now'}
