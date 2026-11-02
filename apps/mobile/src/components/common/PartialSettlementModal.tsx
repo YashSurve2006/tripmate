@@ -37,7 +37,7 @@ export const PartialSettlementModal: React.FC<PartialSettlementModalProps> = ({
   onClose,
   onSubmit,
 }) => {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [mode, setMode] = useState<SettlementMode>('REQUEST_CONFIRMATION');
@@ -63,7 +63,7 @@ export const PartialSettlementModal: React.FC<PartialSettlementModalProps> = ({
   }, [amount]);
 
   const remainingPaise = maxAmountPaise - amountPaise;
-  const valid = Number.isSafeInteger(amountPaise) && amountPaise > 0 && amountPaise <= maxAmountPaise;
+  const valid = /^\\d+(\\.\\d{0,2})?$/.test(amount.trim()) && Number.isSafeInteger(amountPaise) && amountPaise > 0 && amountPaise <= maxAmountPaise;
 
   const setQuickAmount = (ratio: number) => {
     const value = Math.floor((maxAmountPaise * ratio) / 100);
@@ -228,34 +228,34 @@ const styles = StyleSheet.create({
   handleWrap: { alignItems: 'center', paddingVertical: Spacing.sm },
   handle: { width: 42, height: 4, borderRadius: 4 },
   header: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.md, marginBottom: Spacing.lg },
-  title: { fontSize: Typography.h2, fontWeight: '800' },
-  subtitle: { fontSize: Typography.caption, lineHeight: 18, marginTop: 4 },
+  title: { fontSize: Typography.h2.fontSize, fontWeight: '800' },
+  subtitle: { fontSize: Typography.caption.fontSize, lineHeight: 18, marginTop: 4 },
   close: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   routeCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderRadius: Radius.lg, padding: Spacing.md },
   person: { flex: 1, gap: 4 },
   label: { fontSize: 10, fontWeight: '800', letterSpacing: 0.9 },
-  personName: { fontSize: Typography.body, fontWeight: '700' },
+  personName: { fontSize: Typography.body.fontSize, fontWeight: '700' },
   outstanding: { fontSize: 26, fontWeight: '800', marginTop: 3 },
   amountBox: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderRadius: Radius.lg, paddingHorizontal: Spacing.md, marginTop: Spacing.xs },
   currencySymbol: { fontSize: 23, fontWeight: '700' },
   amountInput: { flex: 1, fontSize: 26, fontWeight: '800', paddingVertical: Spacing.md, paddingLeft: Spacing.sm },
   quickAmounts: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
   quickButton: { flex: 1, borderWidth: 1, borderRadius: Radius.md, alignItems: 'center', paddingVertical: Spacing.sm },
-  quickText: { fontSize: Typography.caption, fontWeight: '700' },
+  quickText: { fontSize: Typography.caption.fontSize, fontWeight: '700' },
   remainingRow: { marginTop: Spacing.md, padding: Spacing.md, borderRadius: Radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.sm },
-  remainingLabel: { fontSize: Typography.caption, flex: 1 },
-  remainingValue: { fontSize: Typography.body, fontWeight: '800' },
+  remainingLabel: { fontSize: Typography.caption.fontSize, flex: 1 },
+  remainingValue: { fontSize: Typography.body.fontSize, fontWeight: '800' },
   modeList: { gap: Spacing.sm, marginTop: Spacing.xs },
   modeCard: { borderWidth: 1.5, borderRadius: Radius.lg, padding: Spacing.md },
   modeTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  modeTitle: { fontSize: Typography.body, fontWeight: '700', flex: 1 },
-  modeDescription: { fontSize: Typography.caption, lineHeight: 18, marginTop: 7, marginLeft: 26 },
+  modeTitle: { fontSize: Typography.body.fontSize, fontWeight: '700', flex: 1 },
+  modeDescription: { fontSize: Typography.caption.fontSize, lineHeight: 18, marginTop: 7, marginLeft: 26 },
   radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   radioDot: { width: 9, height: 9, borderRadius: 5 },
   noteInput: { borderWidth: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginTop: Spacing.xs, fontSize: Typography.body },
-  error: { fontSize: Typography.caption, marginTop: Spacing.sm },
+  error: { fontSize: Typography.caption.fontSize, marginTop: Spacing.sm },
   submit: { minHeight: 50, borderRadius: Radius.lg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.md, marginTop: Spacing.lg },
-  submitText: { color: '#FFFFFF', fontSize: Typography.body, fontWeight: '800' },
+  submitText: { color: '#FFFFFF', fontSize: Typography.body.fontSize, fontWeight: '800' },
   cancel: { alignItems: 'center', paddingVertical: Spacing.md },
-  cancelText: { fontSize: Typography.body, fontWeight: '600' },
+  cancelText: { fontSize: Typography.body.fontSize, fontWeight: '600' },
 });
