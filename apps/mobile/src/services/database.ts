@@ -847,7 +847,7 @@ class DatabaseService {
 
     const rawSettlements = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'settlements');
     const allSettlements: any[] = rawSettlements ? JSON.parse(rawSettlements) : [];
-    const groupSettlements = allSettlements.filter((s: any) => s.group_id === groupId && s.status === 'CONFIRMED');
+    const groupSettlements = allSettlements.filter((s: any) => s.group_id === groupId);
 
     return (grp?.members || []).map((m: any) => {
       const uId = m.userId || m.id;
@@ -870,9 +870,14 @@ class DatabaseService {
 
       let confirmedRepaymentsMadePaise = 0;
       let confirmedRepaymentsReceivedPaise = 0;
+      let pendingRepaymentsPaise = 0;
       for (const stl of groupSettlements) {
-        if (stl.payer_id === uId) confirmedRepaymentsMadePaise += stl.amount_paise;
-        if (stl.payee_id === uId) confirmedRepaymentsReceivedPaise += stl.amount_paise;
+        if (stl.status === 'CONFIRMED') {
+          if (stl.payer_id === uId) confirmedRepaymentsMadePaise += stl.amount_paise;
+          if (stl.payee_id === uId) confirmedRepaymentsReceivedPaise += stl.amount_paise;
+        } else if (stl.status === 'PENDING' && (stl.payer_id === uId || stl.payee_id === uId)) {
+          pendingRepaymentsPaise += Number(stl.amount_paise || 0);
+        }
       }
 
       const netBalancePaise = totalPaidPaise - totalSharePaise + confirmedRepaymentsMadePaise - confirmedRepaymentsReceivedPaise;
@@ -895,7 +900,7 @@ class DatabaseService {
         amountOwingPaise: Math.max(0, -netBalancePaise),
         confirmedRepaymentsMadePaise,
         confirmedRepaymentsReceivedPaise,
-        pendingRepaymentsPaise: 0,
+        pendingRepaymentsPaise,
         paidExpenseCount,
         participatedExpenseCount,
       };
@@ -2133,6 +2138,26 @@ class DatabaseService {
     return Math.max(0, pairDebt - pendingReserved);
   }
 
+  private async assertSettlementAmountAvailable(
+    groupId: string,
+    payerId: string,
+    payeeId: string,
+    amountPaise: number,
+    currency = 'INR',
+    excludeSettlementId?: string
+  ): Promise<void> {
+    const availablePaise = await this.getPairOutstandingPaise(
+      groupId, payerId, payeeId, excludeSettlementId
+    );
+    if (amountPaise > availablePaise) {
+      throw new Error(
+        availablePaise <= 0
+          ? 'There is no available outstanding balance for this payment pair.'
+          : `Payment exceeds the available outstanding balance of ${formatCurrency(availablePaise, currency)}.`
+      );
+    }
+  }
+
   async createSettlement(input: {
     groupId: string;
     payerId: string;
@@ -2150,19 +2175,6 @@ class DatabaseService {
       throw new Error('A member cannot settle a payment to themselves.');
     }
 
-    const availablePaise = await this.getPairOutstandingPaise(
-      input.groupId,
-      input.payerId,
-      input.payeeId
-    );
-    if (input.amountPaise > availablePaise) {
-      throw new Error(
-        availablePaise <= 0
-          ? 'There is no available outstanding balance for this payment pair.'
-          : `Payment exceeds the available outstanding balance of ${formatCurrency(availablePaise, input.currency || 'INR')}.`
-      );
-    }
-
     const id = 'stl-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     const now = new Date().toISOString();
     const status = input.status || 'CONFIRMED';
@@ -2170,6 +2182,9 @@ class DatabaseService {
 
     if (this.db) {
       await this.db.withTransactionAsync(async () => {
+        await this.assertSettlementAmountAvailable(
+          input.groupId, input.payerId, input.payeeId, input.amountPaise, input.currency || 'INR'
+        );
         await this.db!.runAsync(
           `INSERT INTO settlements (id, group_id, payer_id, payee_id, amount_paise, currency, status, notes, confirmed_at, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -2198,6 +2213,9 @@ class DatabaseService {
       return;
     }
 
+    await this.assertSettlementAmountAvailable(
+      input.groupId, input.payerId, input.payeeId, input.amountPaise, input.currency || 'INR'
+    );
     const raw = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'settlements');
     const existing = raw ? JSON.parse(raw) : [];
     const newStl = {
@@ -2227,16 +2245,6 @@ class DatabaseService {
       throw new Error('This settlement is no longer pending.');
     }
 
-    const availablePaise = await this.getPairOutstandingPaise(
-      settlement.group_id,
-      settlement.payer_id,
-      settlement.payee_id,
-      settlementId
-    );
-    if (Number(settlement.amount_paise) > availablePaise) {
-      throw new Error('This payment can no longer be confirmed because the outstanding balance has changed.');
-    }
-
     const confirmedAt = new Date().toISOString();
     if (this.db) {
       await this.db.withTransactionAsync(async () => {
@@ -2247,12 +2255,28 @@ class DatabaseService {
         if (!current || current.status !== 'PENDING') {
           throw new Error('This settlement has already been processed.');
         }
+        await this.assertSettlementAmountAvailable(
+          settlement.group_id,
+          settlement.payer_id,
+          settlement.payee_id,
+          Number(settlement.amount_paise),
+          settlement.currency || 'INR',
+          settlementId
+        );
         await this.db!.runAsync(
           "UPDATE settlements SET status = 'CONFIRMED', confirmed_at = ? WHERE id = ? AND status = 'PENDING'",
           [confirmedAt, settlementId]
         );
       });
     } else {
+      await this.assertSettlementAmountAvailable(
+        settlement.group_id,
+        settlement.payer_id,
+        settlement.payee_id,
+        Number(settlement.amount_paise),
+        settlement.currency || 'INR',
+        settlementId
+      );
       const raw = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'settlements');
       const items = raw ? JSON.parse(raw) : [];
       const updated = items.map((item: any) =>
