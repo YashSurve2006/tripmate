@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   modeDescription: { fontSize: Typography.caption.fontSize, lineHeight: 18, marginTop: 7, marginLeft: 26 },
   radio: { width: 18, height: 18, borderRadius: 9, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   radioDot: { width: 9, height: 9, borderRadius: 5 },
-  noteInput: { borderWidth: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginTop: Spacing.xs, fontSize: Typography.body },
+  noteInput: { borderWidth: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, marginTop: Spacing.xs, fontSize: Typography.body.fontSize },
   error: { fontSize: Typography.caption.fontSize, marginTop: Spacing.sm },
   submit: { minHeight: 50, borderRadius: Radius.lg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.md, marginTop: Spacing.lg },
   submitText: { color: '#FFFFFF', fontSize: Typography.body.fontSize, fontWeight: '800' },
