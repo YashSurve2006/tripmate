@@ -17,7 +17,7 @@ settlementRouter.use(requireAuth);
 
 const positivePaiseSchema = z.union([
   z.number().int().positive().safe(),
-  z.string().regex(/^[1-9]\\d*$/, 'Amount must be a positive integer number of paise'),
+  z.string().regex(/^[1-9]\d*$/, 'Amount must be a positive integer number of paise'),
 ]);
 
 const createSettlementSchema = z.object({
