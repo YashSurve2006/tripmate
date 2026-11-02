@@ -2235,6 +2235,9 @@ class DatabaseService {
 
   async confirmSettlement(settlementId: string, currentUserId: string): Promise<void> {
     await this.init();
+    if (currentUserId !== CURRENT_USER.id) {
+      throw new Error('Only the signed-in recipient can confirm this payment.');
+    }
     const history = await this.getAllSettlements();
     const settlement = history.find((item: any) => item.id === settlementId);
     if (!settlement) throw new Error('Settlement request was not found.');
@@ -2295,6 +2298,9 @@ class DatabaseService {
 
   async rejectSettlement(settlementId: string, currentUserId: string): Promise<void> {
     await this.init();
+    if (currentUserId !== CURRENT_USER.id) {
+      throw new Error('Only the signed-in recipient can reject this payment.');
+    }
     const history = await this.getAllSettlements();
     const settlement = history.find((item: any) => item.id === settlementId);
     if (!settlement) throw new Error('Settlement request was not found.');
