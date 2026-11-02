@@ -270,6 +270,7 @@ export class OfflineFirstRepository {
     amountPaise: number;
     currency?: string;
     notes?: string;
+    status?: 'PENDING' | 'CONFIRMED';
   }): Promise<void> {
     await this.init();
     return dbService.createSettlement(input);
@@ -278,6 +279,16 @@ export class OfflineFirstRepository {
   async getSettlements(groupId: string): Promise<any[]> {
     await this.init();
     return dbService.getSettlements(groupId);
+  }
+
+  async confirmSettlement(settlementId: string, currentUserId: string): Promise<void> {
+    await this.init();
+    return dbService.confirmSettlement(settlementId, currentUserId);
+  }
+
+  async rejectSettlement(settlementId: string, currentUserId: string): Promise<void> {
+    await this.init();
+    return dbService.rejectSettlement(settlementId, currentUserId);
   }
 
   // --- Activities ---
