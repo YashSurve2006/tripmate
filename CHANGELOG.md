@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-11-02
+
+### Added
+- **Partial Settlement Support**: Enter custom repayment amounts or use quick percentage presets (25%, 50%, 75%, Full) to settle debts incrementally without requiring all-at-once payment.
+- **Instant & Confirmation Settlement Modes**: Option to instantly apply payments or send formal confirmation requests requiring recipient verification before updating ledger balances.
+- **Debt Reservation Engine**: Atomic reservation of pending debt amounts to mathematically prevent duplicate, overlapping, or exceeding settlement requests.
+- **Recipient Decision Controls**: Secure recipient-only action sheet to review, confirm, or reject pending settlement requests with audit activity logging.
+- **Production Android Release v1.2.0 (versionCode 3)**: Standalone release APK built and verified with exact package name (`com.tripmate.app`) and identical certificate fingerprint for zero-data-loss in-place updates.
+- **Full Test Suite & Validation**: 141 passing tests (40 shared, 4 backend, 97 E2E) and clean TypeScript type checks across all workspaces.
+
 ## [1.1.0] - 2026-10-24
 
 ### Added

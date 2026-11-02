@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Request, Router } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth';
 import { validate } from '../middleware/validate';
@@ -21,6 +21,7 @@ const positivePaiseSchema = z.union([
 ]);
 
 const createSettlementSchema = z.object({
+  params: z.object({ groupId: z.string() }).passthrough(),
   body: z.object({
     payeeId: z.string().uuid('Valid payee userId is required'),
     amountPaise: positivePaiseSchema,
@@ -115,7 +116,7 @@ async function getAvailablePairDebt(
 }
 
 // List all group settlements, including pending and rejected history.
-settlementRouter.get('/', async (req, res, next) => {
+settlementRouter.get('/', async (req: Request<{ groupId: string }>, res, next) => {
   try {
     const userId = req.user!.userId;
     const groupId = req.params.groupId;

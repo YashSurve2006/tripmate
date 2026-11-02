@@ -14,7 +14,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { useTheme } from '../../theme/ThemeContext';
 import { Radius, Shadows, Spacing, Typography } from '../../theme/tokens';
-import { formatCurrency, parseCurrencyToMinorUnits } from '../../utils/finance';
+import { formatCurrency, parseAmountToPaise } from '../../utils/finance';
 
 export type SettlementMode = 'INSTANT' | 'REQUEST_CONFIRMATION';
 
@@ -56,7 +56,7 @@ export const PartialSettlementModal: React.FC<PartialSettlementModalProps> = ({
 
   const amountPaise = useMemo(() => {
     try {
-      return amount.trim() ? parseCurrencyToMinorUnits(amount) : 0;
+      return amount.trim() ? parseAmountToPaise(amount) : 0;
     } catch {
       return 0;
     }
@@ -178,7 +178,7 @@ export const PartialSettlementModal: React.FC<PartialSettlementModalProps> = ({
                 style={[styles.modeCard, { borderColor: mode === 'REQUEST_CONFIRMATION' ? colors.primary : colors.border, backgroundColor: mode === 'REQUEST_CONFIRMATION' ? colors.primaryMuted : colors.surface }]}
               >
                 <View style={styles.modeTop}>
-                  <Feather name="shield-check" size={18} color={mode === 'REQUEST_CONFIRMATION' ? colors.primary : colors.textMuted} />
+                  <Feather name="shield" size={18} color={mode === 'REQUEST_CONFIRMATION' ? colors.primary : colors.textMuted} />
                   <Text style={[styles.modeTitle, { color: colors.text }]}>Request confirmation</Text>
                   <View style={[styles.radio, { borderColor: mode === 'REQUEST_CONFIRMATION' ? colors.primary : colors.border }]}>
                     {mode === 'REQUEST_CONFIRMATION' && <View style={[styles.radioDot, { backgroundColor: colors.primary }]} />}
@@ -223,7 +223,7 @@ export const PartialSettlementModal: React.FC<PartialSettlementModalProps> = ({
 
 const styles = StyleSheet.create({
   overlay: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.52)' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.52)' },
   sheet: { maxHeight: '94%', borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: 1, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.xl, ...Shadows.lg },
   handleWrap: { alignItems: 'center', paddingVertical: Spacing.sm },
   handle: { width: 42, height: 4, borderRadius: 4 },

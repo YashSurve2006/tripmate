@@ -117,30 +117,34 @@ async function uploadAsset(uploadUrlTemplate, filePath, fileName, token) {
 async function main() {
   const token = getGitToken();
   const repo = 'YashSurve2006/tripmate';
-  const tag = 'v1.1.0';
-  const releaseName = 'TripMate v1.1.0 — Production Android Release';
-  const releaseBody = `## 🚀 TripMate v1.1.0 — Production Android Release
+  const tag = process.env.RELEASE_TAG || 'v1.2.0';
+  const targetCommitish = process.env.RELEASE_BRANCH || 'feature/partial-settlements';
+  const releaseName = 'TripMate v1.2.0 — Production Android Release (Partial Settlements)';
+  const releaseBody = `## 🚀 TripMate v1.2.0 — Production Android Release
 
-Welcome to the **v1.1.0** production release of **TripMate** — the offline-first group expense and trip management application!
+Welcome to the **v1.2.0** production release of **TripMate** — the offline-first group expense, trip management, and settlement application!
 
-### ✨ What's New in v1.1.0
-- **Custom Amount-Wise Expense Splitting**: Full support for custom split allocations across members with real-time paise balance validation, visual remaining indicator badges, percentage / shares breakdown, and zero-share member exclusion.
-- **Dynamic Group Member Management**: Add members on-the-fly directly by name without invite codes or phone barriers; edit roles, nicknames, and contact info; and safely archive historical transaction participants without corrupting balance audits.
-- **Safe Group Deletion & Record Cleanup**: Cascading deletion dialog allowing users to wipe group expenses, splits, and attached documents while strictly safeguarding global user profiles and other groups.
-- **WhatsApp Bill Splitting & Settlement Reminders**: One-tap WhatsApp breakdown sharing (\`wa.me/\` deep linking) with dynamic emoji formatting, amount calculations, and international phone number normalization (E.164 and Indian 10-digit formats).
-- **Official Brand App Launcher Icons**: High-resolution branded Android adaptive launcher icons (foreground + background layers) and iOS icons configured from official brand assets.
-- **Standalone Android Release Build (versionCode 2)**: Universal APK compiled for ARM64, ARMv7, x86, and x86_64 architectures with Hermes AOT compilation.
-- **Comprehensive 97-Test Suite**: 100% test coverage across financial calculations, minor-unit arithmetic, and end-to-end user workflows.
+### 💡 What's New in v1.2.0
+- **Partial Settlements**: Pay off debts flexibly with custom paise-accurate amounts or quick 25%, 50%, 75%, and Full payment selectors.
+- **Instant & Request Confirmation Modes**: Choose between instant ledger balance updates or sending a settlement confirmation request.
+- **Recipient Verification Controls**: Recipients can review and confirm receipt or reject invalid settlement requests.
+- **Debt Reservation Engine**: Pending requests safely reserve debt without altering member balances prematurely, preventing duplicate or exceeding settlements.
+- **Data Preservation Architecture**: Tested and verified seamless in-place APK upgrade preserving all existing \`tripmate.db\` SQLite records, uploaded bill receipts, and user sessions.
+- **Standalone Android Release Build (versionCode 3)**: Universal release APK compiled for ARM64, ARMv7, x86, and x86_64 architectures with matching keystore signature for in-place updates.
+- **Comprehensive 141-Test Suite**: 100% test coverage across shared models, backend financial reconciliation, and mobile user workflows.
 
-### 📥 Download & Installation
+### 📦 Download & Installation
 1. Download **\`TripMate-release.apk\`** (99.5 MB) below.
-2. Transfer to your Android device (or download directly via Chrome/Firefox on Android).
-3. Tap the file to install (enable *Install Unknown Apps* in Android settings if prompted).
+2. Transfer to your Android phone (or download directly on your device).
+3. Tap the file to install — Android will update your existing TripMate app without losing any data.
 
-### 🔐 Binary Verification
+### 🔒 Binary Verification
 - **File Name**: \`TripMate-release.apk\`
-- **File Size**: \`104,288,031 bytes (99.5 MB)\`
-- **SHA-256**: \`EEA088C4F2269211869020B2B56EC2125DFA722033EBDFA70597AB3DD09CE996\`
+- **File Size**: \`104,314,567 bytes (99.5 MB)\`
+- **SHA-256**: \`E498E58414F31B7FF416F03B6345DB0F5F72B85AA36228C5E7D6EA134247C08C\`
+- **Package Name**: \`com.tripmate.app\`
+- **Version Code**: \`3\`
+- **Version Name**: \`1.2.0\`
 - **Target OS**: Android 8.0+ (API 26–36)
 
 ---
@@ -160,7 +164,7 @@ Welcome to the **v1.1.0** production release of **TripMate** — the offline-fir
         headers: { 'Content-Type': 'application/json' }
       }, {
         tag_name: tag,
-        target_commitish: 'main',
+        target_commitish: targetCommitish,
         name: releaseName,
         body: releaseBody,
         draft: false,
