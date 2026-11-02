@@ -73,7 +73,7 @@ export const PartialSettlementModal: React.FC<PartialSettlementModalProps> = ({
 
   const submit = async () => {
     if (!valid) {
-      setError(amountPaise <= 0 ? 'Enter an amount greater than zero.' : 'Amount cannot exceed the outstanding balance.');
+      setError(!/^\\d+(\\.\\d{0,2})?$/.test(amount.trim()) ? 'Enter a valid amount with up to 2 decimal places.' : amountPaise <= 0 ? 'Enter an amount greater than zero.' : 'Amount cannot exceed the outstanding balance.');
       return;
     }
     setSubmitting(true);
