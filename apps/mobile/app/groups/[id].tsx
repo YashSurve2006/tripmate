@@ -22,6 +22,7 @@ import { EditMemberModal } from '../../src/components/common/EditMemberModal';
 import { ExpenseItem, ExpenseItemData } from '../../src/components/common/ExpenseItem';
 import { ExportExcelModal } from '../../src/components/common/ExportExcelModal';
 import { WhatsAppReminderModal } from '../../src/components/common/WhatsAppReminderModal';
+import { PartialSettlementModal, SettlementMode } from '../../src/components/common/PartialSettlementModal';
 import { Avatar } from '../../src/components/ui/Avatar';
 import { Badge } from '../../src/components/ui/Badge';
 import { Button } from '../../src/components/ui/Button';
@@ -64,6 +65,7 @@ export default function GroupDetailsScreen() {
   const [settlements, setSettlements] = useState<any[]>([]);
   const [settleModalVisible, setSettleModalVisible] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<any>(null);
+  const [settlementActionLoading, setSettlementActionLoading] = useState<string | null>(null);
 
   // Member Management UI state
   const [detailedMembers, setDetailedMembers] = useState<ReportMemberSummary[]>([]);
@@ -168,24 +170,71 @@ export default function GroupDetailsScreen() {
     loadData();
   };
 
-  const handleConfirmSettlement = async () => {
+  const handleCreateSettlement = async (
+    amountPaise: number,
+    mode: SettlementMode,
+    note?: string
+  ) => {
     if (!selectedTransfer || !group) return;
+    await api.createSettlement({
+      groupId: group.id,
+      payerId: selectedTransfer.fromId,
+      payeeId: selectedTransfer.toId,
+      amountPaise,
+      currency: group.currency,
+      notes: note || `Settlement between ${selectedTransfer.fromName} and ${selectedTransfer.toName}`,
+      status: mode === 'INSTANT' ? 'CONFIRMED' : 'PENDING',
+    });
+    setSettleModalVisible(false);
+    setSelectedTransfer(null);
+    await loadData();
+    Alert.alert(
+      mode === 'INSTANT' ? 'Payment Recorded' : 'Confirmation Requested',
+      mode === 'INSTANT'
+        ? 'The payment was recorded and group balances have been updated.'
+        : 'The payment is pending. The recipient must confirm receipt before balances change.'
+    );
+  };
+
+  const handleConfirmPendingSettlement = async (settlement: any) => {
+    if (!user?.id || settlementActionLoading) return;
+    setSettlementActionLoading(settlement.id);
     try {
-      await api.createSettlement({
-        groupId: group.id,
-        payerId: selectedTransfer.fromId,
-        payeeId: selectedTransfer.toId,
-        amountPaise: selectedTransfer.amountPaise,
-        currency: group.currency,
-        notes: `Settlement between ${selectedTransfer.fromName} and ${selectedTransfer.toName}`,
-      });
-      setSettleModalVisible(false);
-      setSelectedTransfer(null);
+      await api.confirmSettlement(settlement.id, user.id);
       await loadData();
-      Alert.alert('Settled!', 'Settlement recorded and account balances updated.');
-    } catch {
-      Alert.alert('Error', 'Failed to record settlement.');
+      Alert.alert('Payment Confirmed', 'The recipient confirmed this payment. Balances have been updated.');
+    } catch (err: any) {
+      Alert.alert('Unable to Confirm', err?.message || 'This payment could not be confirmed.');
+    } finally {
+      setSettlementActionLoading(null);
     }
+  };
+
+  const handleRejectPendingSettlement = async (settlement: any) => {
+    if (!user?.id || settlementActionLoading) return;
+    Alert.alert(
+      'Reject Payment?',
+      'This will reject the payment request. It will not change group balances.',
+      [
+        { text: 'Keep Pending', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            setSettlementActionLoading(settlement.id);
+            try {
+              await api.rejectSettlement(settlement.id, user.id);
+              await loadData();
+              Alert.alert('Request Rejected', 'The payment request was rejected.');
+            } catch (err: any) {
+              Alert.alert('Unable to Reject', err?.message || 'This request could not be rejected.');
+            } finally {
+              setSettlementActionLoading(null);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleAddMember = async (memberData: any, addAnother: boolean) => {
@@ -849,6 +898,16 @@ export default function GroupDetailsScreen() {
                         >
                           {formatCurrency(t.amount, group.currency)}
                         </Text>
+                        {(() => {
+                          const pendingPaise = settlements
+                            .filter((s: any) => s.status === 'PENDING' && s.payer_id === t.fromUserId && s.payee_id === t.toUserId)
+                            .reduce((sum: number, s: any) => sum + Number(s.amount_paise || 0), 0);
+                          return pendingPaise > 0 ? (
+                            <Text style={{ color: colors.warning, fontSize: 11, marginTop: 3 }}>
+                              {formatCurrency(pendingPaise, group.currency)} awaiting confirmation
+                            </Text>
+                          ) : null;
+                        })()}
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.xs }}>
                         <TouchableOpacity
@@ -876,21 +935,37 @@ export default function GroupDetailsScreen() {
                           <Ionicons name="logo-whatsapp" size={18} color="#25D366" />
                         </TouchableOpacity>
 
-                        <Button
-                          title="Settle"
-                          size="sm"
-                          variant={isDebtor ? 'primary' : 'outline'}
-                          onPress={() => {
-                            setSelectedTransfer({
-                              fromId: t.fromUserId,
-                              fromName: fromMember?.name || 'Member',
-                              toId: t.toUserId,
-                              toName: toMember?.name || 'Member',
-                              amountPaise: t.amount,
-                            });
-                            setSettleModalVisible(true);
-                          }}
-                        />
+                        {(() => {
+                          const pendingForPair = settlements
+                            .filter((s: any) =>
+                              s.status === 'PENDING' &&
+                              s.payer_id === t.fromUserId &&
+                              s.payee_id === t.toUserId
+                            )
+                            .reduce((sum: number, s: any) => sum + Number(s.amount_paise || 0), 0);
+                          const availablePaise = Math.max(0, t.amount - pendingForPair);
+                          return availablePaise > 0 ? (
+                            <Button
+                              title="Settle"
+                              size="sm"
+                              variant={isDebtor ? 'primary' : 'outline'}
+                              onPress={() => {
+                                setSelectedTransfer({
+                                  fromId: t.fromUserId,
+                                  fromName: fromMember?.name || 'Member',
+                                  toId: t.toUserId,
+                                  toName: toMember?.name || 'Member',
+                                  amountPaise: availablePaise,
+                                });
+                                setSettleModalVisible(true);
+                              }}
+                            />
+                          ) : (
+                            <Text style={{ color: colors.warning, fontSize: 11, fontWeight: '700' }}>
+                              Awaiting confirmation
+                            </Text>
+                          );
+                        })()}
                       </View>
                     </View>
 
@@ -904,30 +979,68 @@ export default function GroupDetailsScreen() {
               <View style={{ marginTop: Spacing.lg }}>
                 <Text style={[styles.sectionHeading, { color: colors.text }]}>Settlement History</Text>
                 <View style={[styles.cardList, { backgroundColor: colors.surface, borderColor: colors.borderLight, marginTop: Spacing.xs }]}>
-                  {settlements.map((s: any, sIdx: number) => (
-                    <View
-                      key={s.id || sIdx}
-                      style={[
-                        styles.settlementHistoryRow,
-                        sIdx < settlements.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
-                      ]}
-                    >
-                      <View style={[styles.historyIconCircle, { backgroundColor: isDark ? 'rgba(16, 185, 129, 0.15)' : '#D1FAE5' }]}>
-                        <Feather name="check" size={14} color={colors.positive} />
+                  {settlements.map((s: any, sIdx: number) => {
+                    const isPending = s.status === 'PENDING';
+                    const isRejected = s.status === 'REJECTED';
+                    const isRecipient = s.payee_id === user?.id;
+                    const statusColor = isPending ? colors.warning : isRejected ? colors.negative : colors.positive;
+                    const statusLabel = isPending ? 'Awaiting confirmation' : isRejected ? 'Rejected' : 'Confirmed';
+                    return (
+                      <View
+                        key={s.id || sIdx}
+                        style={[
+                          styles.settlementHistoryRow,
+                          sIdx < settlements.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+                        ]}
+                      >
+                        <View style={[
+                          styles.historyIconCircle,
+                          { backgroundColor: isPending ? (isDark ? 'rgba(217,119,6,0.16)' : '#FEF3C7') : isRejected ? (isDark ? 'rgba(239,68,68,0.15)' : '#FEE2E2') : (isDark ? 'rgba(16,185,129,0.15)' : '#D1FAE5') },
+                        ]}>
+                          <Feather name={isPending ? 'clock' : isRejected ? 'x' : 'check'} size={14} color={statusColor} />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+                          <Text style={[styles.historyTitle, { color: colors.text }]}>
+                            {s.payer_name || 'Member'} paid {s.payee_name || 'Member'}
+                          </Text>
+                          <Text style={[styles.historySub, { color: colors.textMuted }]}>
+                            {statusLabel} · {s.created_at ? new Date(s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                          </Text>
+                          {!!s.notes && (
+                            <Text style={[styles.historySub, { color: colors.textMuted }]} numberOfLines={1}>{s.notes}</Text>
+                          )}
+                          {isPending && isRecipient && (
+                            <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.xs }}>
+                              <TouchableOpacity
+                                disabled={settlementActionLoading === s.id}
+                                onPress={() => handleConfirmPendingSettlement(s)}
+                                style={{ backgroundColor: colors.primary, borderRadius: Radius.md, paddingHorizontal: Spacing.sm, paddingVertical: 7, opacity: settlementActionLoading === s.id ? 0.55 : 1 }}
+                              >
+                                <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '800' }}>
+                                  {settlementActionLoading === s.id ? 'Processing…' : 'Confirm receipt'}
+                                </Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                disabled={!!settlementActionLoading}
+                                onPress={() => handleRejectPendingSettlement(s)}
+                                style={{ borderColor: colors.negative, borderWidth: 1, borderRadius: Radius.md, paddingHorizontal: Spacing.sm, paddingVertical: 7, opacity: settlementActionLoading ? 0.55 : 1 }}
+                              >
+                                <Text style={{ color: colors.negative, fontSize: 11, fontWeight: '800' }}>Reject</Text>
+                              </TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                          <Text style={[styles.historyAmount, { color: statusColor }]}>
+                            {formatCurrency(s.amount_paise, s.currency || group.currency)}
+                          </Text>
+                          <Text style={{ color: statusColor, fontSize: 9, fontWeight: '800', marginTop: 3 }}>
+                            {isPending ? 'PENDING' : isRejected ? 'REJECTED' : 'PAID'}
+                          </Text>
+                        </View>
                       </View>
-                      <View style={{ flex: 1, marginLeft: Spacing.sm }}>
-                        <Text style={[styles.historyTitle, { color: colors.text }]}>
-                          {s.payer_name || 'Member'} paid {s.payee_name || 'Member'}
-                        </Text>
-                        <Text style={[styles.historySub, { color: colors.textMuted }]}>
-                          {s.confirmed_at || s.created_at ? new Date(s.confirmed_at || s.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Confirmed'}
-                        </Text>
-                      </View>
-                      <Text style={[styles.historyAmount, { color: colors.positive }]}>
-                        {formatCurrency(s.amount_paise, s.currency || group.currency)}
-                      </Text>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               </View>
             )}
@@ -1158,18 +1271,16 @@ export default function GroupDetailsScreen() {
         />
       )}
 
-      {/* Settlement Confirmation Dialog */}
+      {/* Partial Settlement Composer */}
       {selectedTransfer && (
-        <ConfirmationDialog
+        <PartialSettlementModal
           visible={settleModalVisible}
-          title="Record Settlement"
-          message={`Confirm recording a settlement of ${formatCurrency(
-            selectedTransfer.amountPaise,
-            group.currency
-          )} from ${selectedTransfer.fromName} to ${selectedTransfer.toName}?`}
-          confirmText="Confirm & Settle"
-          onConfirm={handleConfirmSettlement}
-          onCancel={() => {
+          payerName={selectedTransfer.fromName}
+          payeeName={selectedTransfer.toName}
+          maxAmountPaise={selectedTransfer.amountPaise}
+          currency={group.currency}
+          onSubmit={handleCreateSettlement}
+          onClose={() => {
             setSettleModalVisible(false);
             setSelectedTransfer(null);
           }}
