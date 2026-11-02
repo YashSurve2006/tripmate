@@ -22,7 +22,7 @@ import { EditMemberModal } from '../../src/components/common/EditMemberModal';
 import { ExpenseItem, ExpenseItemData } from '../../src/components/common/ExpenseItem';
 import { ExportExcelModal } from '../../src/components/common/ExportExcelModal';
 import { WhatsAppReminderModal } from '../../src/components/common/WhatsAppReminderModal';
-import { PartialSettlementModal, SettlementMode } from '../../src/components/common/PartialSettlementModal';
+import { PartialSettlementModal, type SettlementMode } from '../../src/components/common/PartialSettlementModal';
 import { Avatar } from '../../src/components/ui/Avatar';
 import { Badge } from '../../src/components/ui/Badge';
 import { Button } from '../../src/components/ui/Button';
