@@ -10,9 +10,9 @@
 
 <br/>
 
-[![GitHub Release](https://img.shields.io/github/v/release/YashSurve2006/tripmate?style=for-the-badge&color=7C3AED&labelColor=1E1B4B&logo=github)](https://github.com/YashSurve2006/tripmate/releases/tag/v1.1.0)
-[![Download APK](https://img.shields.io/badge/Download_APK-v1.1.0-10B981?style=for-the-badge&logo=android&logoColor=white&labelColor=064E3B)](https://github.com/YashSurve2006/tripmate/releases/download/v1.1.0/TripMate-release.apk)
-[![Tests](https://img.shields.io/badge/Tests-197_Total-0D9488?style=for-the-badge&logo=jest&logoColor=white&labelColor=042F2E)](.)
+[![GitHub Release](https://img.shields.io/github/v/release/YashSurve2006/tripmate?style=for-the-badge&color=7C3AED&labelColor=1E1B4B&logo=github)](https://github.com/YashSurve2006/tripmate/releases/tag/v1.2.0)
+[![Download APK](https://img.shields.io/badge/Download_APK-v1.2.0-10B981?style=for-the-badge&logo=android&logoColor=white&labelColor=064E3B)](https://github.com/YashSurve2006/tripmate/releases/download/v1.2.0/TripMate-release.apk)
+[![Tests](https://img.shields.io/badge/Tests-141_Total-0D9488?style=for-the-badge&logo=jest&logoColor=white&labelColor=042F2E)](.)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge&labelColor=1E1B4B)](./LICENSE)
 
 <br/>
@@ -34,14 +34,14 @@ The production Android APK is built, tested, and available directly from GitHub 
 
 | Item | Details |
 |:---|:---|
-| 📦 **Release Tag** | [**`v1.1.0` Production Release**](https://github.com/YashSurve2006/tripmate/releases/tag/v1.1.0) |
-| 🚀 **Direct Download** | [**`TripMate-release.apk` (99.5 MB)**](https://github.com/YashSurve2006/tripmate/releases/download/v1.1.0/TripMate-release.apk) |
-| 🔐 **SHA-256 Checksum** | `EEA088C4F2269211869020B2B56EC2125DFA722033EBDFA70597AB3DD09CE996` |
+| 📦 **Release Tag** | [**`v1.2.0` Production Release**](https://github.com/YashSurve2006/tripmate/releases/tag/v1.2.0) |
+| 🚀 **Direct Download** | [**`TripMate-release.apk` (99.5 MB)**](https://github.com/YashSurve2006/tripmate/releases/download/v1.2.0/TripMate-release.apk) |
+| 🔐 **SHA-256 Checksum** | `E498E58414F31B7FF416F03B6345DB0F5F72B85AA36228C5E7D6EA134247C08C` |
 | 📱 **Target OS** | Android 8.0+ (API 26–36) • `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64` |
 | 🔒 **Privacy Guarantee** | 100% Offline • Zero tracking • All data stays inside local SQLite |
 
 ### ⚡ Quick Install on Phone
-1. Download [**`TripMate-release.apk`**](https://github.com/YashSurve2006/tripmate/releases/download/v1.1.0/TripMate-release.apk) on your Android device.
+1. Download [**`TripMate-release.apk`**](https://github.com/YashSurve2006/tripmate/releases/download/v1.2.0/TripMate-release.apk) on your Android device.
 2. If prompted, enable **Install Unknown Apps** in Android settings for your browser or file manager.
 3. Tap the downloaded APK to install. The app launches immediately without any login or cloud account.
 
