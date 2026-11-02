@@ -46,7 +46,7 @@ async function getAvailablePairDebt(
   const group = await tx.group.findUnique({
     where: { id: groupId },
     include: {
-      members: true,
+      members: { orderBy: { joinedAt: 'asc' } },
       expenses: { include: { payments: true, splits: true } },
       settlements: true,
     },
@@ -75,7 +75,7 @@ async function getAvailablePairDebt(
   const debtors = [...balances.entries()]
     .filter(([, balance]) => balance < 0n)
     .map(([userId, balance]) => ({ userId, amount: -balance }))
-    .sort((a, b) => a.amount === b.amount ? a.userId.localeCompare(b.userId) : a.amount > b.amount ? -1 : 1);
+    .sort((a, b) => a.amount === b.amount ? 0 : a.amount > b.amount ? -1 : 1);
 
   const creditors = [...balances.entries()]
     .filter(([, balance]) => balance > 0n)
