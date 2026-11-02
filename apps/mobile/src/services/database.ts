@@ -2097,6 +2097,42 @@ class DatabaseService {
     return list.filter((s: any) => s.group_id === groupId);
   }
 
+  private async getPairOutstandingPaise(
+    groupId: string,
+    payerId: string,
+    payeeId: string,
+    excludeSettlementId?: string
+  ): Promise<number> {
+    const members = await this.getGroupMembers(groupId, true);
+    const balanceMap: Record<string, any> = {};
+    for (const member of members) {
+      balanceMap[member.userId] = {
+        userId: member.userId,
+        balance: member.netBalancePaise,
+        totalPaid: member.totalPaidPaise,
+        totalShare: member.totalSharePaise,
+        totalSettlementReceived: member.confirmedRepaymentsReceivedPaise,
+        totalSettlementPaid: member.confirmedRepaymentsMadePaise,
+      };
+    }
+
+    const transfer = simplifyDebts(balanceMap).find(
+      (item) => item.fromUserId === payerId && item.toUserId === payeeId
+    );
+    const pairDebt = transfer?.amount || 0;
+    const history = await this.getSettlements(groupId);
+    const pendingReserved = history
+      .filter((item: any) =>
+        item.status === 'PENDING' &&
+        item.id !== excludeSettlementId &&
+        item.payer_id === payerId &&
+        item.payee_id === payeeId
+      )
+      .reduce((sum: number, item: any) => sum + Number(item.amount_paise || 0), 0);
+
+    return Math.max(0, pairDebt - pendingReserved);
+  }
+
   async createSettlement(input: {
     groupId: string;
     payerId: string;
@@ -2104,38 +2140,64 @@ class DatabaseService {
     amountPaise: number;
     currency?: string;
     notes?: string;
+    status?: 'PENDING' | 'CONFIRMED';
   }): Promise<void> {
     await this.init();
-    const id = 'stl-' + Date.now();
+    if (!Number.isSafeInteger(input.amountPaise) || input.amountPaise <= 0) {
+      throw new Error('Settlement amount must be a positive amount in paise.');
+    }
+    if (input.payerId === input.payeeId) {
+      throw new Error('A member cannot settle a payment to themselves.');
+    }
+
+    const availablePaise = await this.getPairOutstandingPaise(
+      input.groupId,
+      input.payerId,
+      input.payeeId
+    );
+    if (input.amountPaise > availablePaise) {
+      throw new Error(
+        availablePaise <= 0
+          ? 'There is no available outstanding balance for this payment pair.'
+          : `Payment exceeds the available outstanding balance of ${formatCurrency(availablePaise, input.currency || 'INR')}.`
+      );
+    }
+
+    const id = 'stl-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     const now = new Date().toISOString();
+    const status = input.status || 'CONFIRMED';
+    const confirmedAt = status === 'CONFIRMED' ? now : null;
 
     if (this.db) {
-      await this.db.runAsync(
-        `INSERT INTO settlements (id, group_id, payer_id, payee_id, amount_paise, currency, status, notes, confirmed_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          input.groupId,
-          input.payerId,
-          input.payeeId,
-          input.amountPaise,
-          input.currency || 'INR',
-          'CONFIRMED',
-          input.notes || null,
-          now,
-          now,
-        ]
-      );
+      await this.db.withTransactionAsync(async () => {
+        await this.db!.runAsync(
+          `INSERT INTO settlements (id, group_id, payer_id, payee_id, amount_paise, currency, status, notes, confirmed_at, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            id,
+            input.groupId,
+            input.payerId,
+            input.payeeId,
+            input.amountPaise,
+            input.currency || 'INR',
+            status,
+            input.notes || null,
+            confirmedAt,
+            now,
+          ]
+        );
+      });
 
       await this.addActivity(
         input.groupId,
-        'SETTLEMENT_RECORDED',
-        `Recorded settlement of ${formatCurrency(input.amountPaise, input.currency || 'INR')}`
+        status === 'CONFIRMED' ? 'SETTLEMENT_RECORDED' : 'SETTLEMENT_REQUESTED',
+        status === 'CONFIRMED'
+          ? `Recorded payment of ${formatCurrency(input.amountPaise, input.currency || 'INR')}.`
+          : `Requested confirmation for ${formatCurrency(input.amountPaise, input.currency || 'INR')}.`
       );
       return;
     }
 
-    // Web fallback
     const raw = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'settlements');
     const existing = raw ? JSON.parse(raw) : [];
     const newStl = {
@@ -2145,12 +2207,110 @@ class DatabaseService {
       payee_id: input.payeeId,
       amount_paise: input.amountPaise,
       currency: input.currency || 'INR',
-      status: 'CONFIRMED',
+      status,
       notes: input.notes || null,
-      confirmed_at: now,
+      confirmed_at: confirmedAt,
       created_at: now,
     };
     await AsyncStorage.setItem(WEB_STORAGE_PREFIX + 'settlements', JSON.stringify([newStl, ...existing]));
+  }
+
+  async confirmSettlement(settlementId: string, currentUserId: string): Promise<void> {
+    await this.init();
+    const history = await this.getAllSettlements();
+    const settlement = history.find((item: any) => item.id === settlementId);
+    if (!settlement) throw new Error('Settlement request was not found.');
+    if (settlement.payee_id !== currentUserId) {
+      throw new Error('Only the recipient can confirm this payment.');
+    }
+    if (settlement.status !== 'PENDING') {
+      throw new Error('This settlement is no longer pending.');
+    }
+
+    const availablePaise = await this.getPairOutstandingPaise(
+      settlement.group_id,
+      settlement.payer_id,
+      settlement.payee_id,
+      settlementId
+    );
+    if (Number(settlement.amount_paise) > availablePaise) {
+      throw new Error('This payment can no longer be confirmed because the outstanding balance has changed.');
+    }
+
+    const confirmedAt = new Date().toISOString();
+    if (this.db) {
+      await this.db.withTransactionAsync(async () => {
+        const current = await this.db!.getFirstAsync<{ status: string }>(
+          'SELECT status FROM settlements WHERE id = ?',
+          [settlementId]
+        );
+        if (!current || current.status !== 'PENDING') {
+          throw new Error('This settlement has already been processed.');
+        }
+        await this.db!.runAsync(
+          "UPDATE settlements SET status = 'CONFIRMED', confirmed_at = ? WHERE id = ? AND status = 'PENDING'",
+          [confirmedAt, settlementId]
+        );
+      });
+    } else {
+      const raw = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'settlements');
+      const items = raw ? JSON.parse(raw) : [];
+      const updated = items.map((item: any) =>
+        item.id === settlementId && item.status === 'PENDING'
+          ? { ...item, status: 'CONFIRMED', confirmed_at: confirmedAt }
+          : item
+      );
+      if (!updated.some((item: any) => item.id === settlementId && item.status === 'CONFIRMED')) {
+        throw new Error('This settlement has already been processed.');
+      }
+      await AsyncStorage.setItem(WEB_STORAGE_PREFIX + 'settlements', JSON.stringify(updated));
+    }
+
+    await this.addActivity(settlement.group_id, 'SETTLEMENT_CONFIRMED', 'Payment receipt confirmed.');
+  }
+
+  async rejectSettlement(settlementId: string, currentUserId: string): Promise<void> {
+    await this.init();
+    const history = await this.getAllSettlements();
+    const settlement = history.find((item: any) => item.id === settlementId);
+    if (!settlement) throw new Error('Settlement request was not found.');
+    if (settlement.payee_id !== currentUserId) {
+      throw new Error('Only the recipient can reject this payment.');
+    }
+    if (settlement.status !== 'PENDING') {
+      throw new Error('Only pending settlements can be rejected.');
+    }
+
+    const rejectedAt = new Date().toISOString();
+    if (this.db) {
+      await this.db.withTransactionAsync(async () => {
+        const current = await this.db!.getFirstAsync<{ status: string }>(
+          'SELECT status FROM settlements WHERE id = ?',
+          [settlementId]
+        );
+        if (!current || current.status !== 'PENDING') {
+          throw new Error('This settlement has already been processed.');
+        }
+        await this.db!.runAsync(
+          "UPDATE settlements SET status = 'REJECTED' WHERE id = ? AND status = 'PENDING'",
+          [settlementId]
+        );
+      });
+    } else {
+      const raw = await AsyncStorage.getItem(WEB_STORAGE_PREFIX + 'settlements');
+      const items = raw ? JSON.parse(raw) : [];
+      const updated = items.map((item: any) =>
+        item.id === settlementId && item.status === 'PENDING'
+          ? { ...item, status: 'REJECTED', rejected_at: rejectedAt }
+          : item
+      );
+      if (!updated.some((item: any) => item.id === settlementId && item.status === 'REJECTED')) {
+        throw new Error('This settlement has already been processed.');
+      }
+      await AsyncStorage.setItem(WEB_STORAGE_PREFIX + 'settlements', JSON.stringify(updated));
+    }
+
+    await this.addActivity(settlement.group_id, 'SETTLEMENT_REJECTED', 'Payment confirmation was rejected.');
   }
 
   // --- Activities CRUD ---
