@@ -63,7 +63,7 @@ export const PartialSettlementModal: React.FC<PartialSettlementModalProps> = ({
   }, [amount]);
 
   const remainingPaise = maxAmountPaise - amountPaise;
-  const valid = /^\\d+(\\.\\d{0,2})?$/.test(amount.trim()) && Number.isSafeInteger(amountPaise) && amountPaise > 0 && amountPaise <= maxAmountPaise;
+  const valid = /^\d+(\.\d{0,2})?$/.test(amount.trim()) && Number.isSafeInteger(amountPaise) && amountPaise > 0 && amountPaise <= maxAmountPaise;
 
   const setQuickAmount = (ratio: number) => {
     const value = Math.floor((maxAmountPaise * ratio) / 100);
@@ -73,7 +73,7 @@ export const PartialSettlementModal: React.FC<PartialSettlementModalProps> = ({
 
   const submit = async () => {
     if (!valid) {
-      setError(!/^\\d+(\\.\\d{0,2})?$/.test(amount.trim()) ? 'Enter a valid amount with up to 2 decimal places.' : amountPaise <= 0 ? 'Enter an amount greater than zero.' : 'Amount cannot exceed the outstanding balance.');
+      setError(!/^\d+(\.\d{0,2})?$/.test(amount.trim()) ? 'Enter a valid amount with up to 2 decimal places.' : amountPaise <= 0 ? 'Enter an amount greater than zero.' : 'Amount cannot exceed the outstanding balance.');
       return;
     }
     setSubmitting(true);
@@ -127,7 +127,7 @@ export const PartialSettlementModal: React.FC<PartialSettlementModalProps> = ({
               <Text style={[styles.currencySymbol, { color: colors.textMuted }]}>{currency === 'INR' ? '₹' : currency}</Text>
               <TextInput
                 value={amount}
-                onChangeText={(value) => { setAmount(value.replace(/[^0-9.]/g, '').replace(/(\\..*)\\./g, '$1')); setError(''); }}
+                onChangeText={(value) => { setAmount(value.replace(/[^0-9.]/g, '').replace(/(\..*)\./g, '$1')); setError(''); }}
                 keyboardType="decimal-pad"
                 placeholder="0.00"
                 placeholderTextColor={colors.textTertiary}
